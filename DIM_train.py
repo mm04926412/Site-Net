@@ -58,17 +58,18 @@ if __name__ == "__main__":
     parser.add_argument("-o", "--overwrite", default=False)
     parser.add_argument("-d", "--debug", default=False)
     parser.add_argument("-u", "--unit_cell_limit",default = 100)
+    parser.add_argument("-w", "--number_of_worker_processes", default=1,type=int)
     args = parser.parse_args()
     try:
         print(args.config)
-        with open(str("config/" + args.config) + ".yaml", "r") as config_file:
+        with open(str(args.config), "r") as config_file:
             config = yaml.load(config_file, Loader=yaml.FullLoader)
     except Exception as e:
         print(e)
         raise RuntimeError(
             "Config not found or unprovided, a configuration JSON path is REQUIRED to run"
         )
-    config["h5_file"] = args.fold_name + ".hdf5"
+    config["h5_file"] = args.fold_name
     if bool(args.debug) == True:
         config["Max_Samples"] = 1000
     if int(args.pickle) == 1:
@@ -80,9 +81,10 @@ if __name__ == "__main__":
     else:
         Dataset = DIM_h5_Data_Module(
             config,
-            max_len=args.unit_cell_limit,
+            max_len=int(args.unit_cell_limit),
             ignore_errors=False,
             overwrite=bool(args.overwrite),
+            cpus=args.number_of_worker_processes
         )
         if int(args.pickle) == 2:
             dump(Dataset, open("db_pickle.pk", "wb"), compression=compression_alg)

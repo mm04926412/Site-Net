@@ -5,7 +5,7 @@ from torch.utils.data import DataLoader, random_split
 from multiprocessing import cpu_count
 from torch.nn.functional import pad
 from modules import (
-    SiteNetEncoder
+    SiteNetEncoder,SiteNetDIMAttentionBlock,SiteNetDIMGlobal
 )
 import torch.nn.functional as F
 import numpy as np
@@ -308,6 +308,7 @@ class basic_callbacks(pl.Callback):
 
     def on_validation_epoch_end(self, trainer, pl_module):
         trainer.save_checkpoint(self.filename)
+
 class SiteNet_DIM(pl.LightningModule):
     def __init__(
         self,
