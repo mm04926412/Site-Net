@@ -293,12 +293,6 @@ class basic_callbacks(pl.Callback):
     def __init__(self,*pargs,filename = "current_model",**kwargs):
         super().__init__(*pargs,**kwargs)
         self.filename = filename + ".ckpt"
-    
-    def on_init_start(self, trainer):
-        print("Starting to init trainer!")
-
-    def on_init_end(self, trainer):
-        print("trainer is init now")
 
     def on_train_end(self, trainer, model):
         trainer.save_checkpoint("most_recent_complete_run.ckpt")
@@ -736,8 +730,8 @@ class SiteNet_batch_sampler(Sampler):
         self.prim_sizes = {idx:self.sampler.data_source[idx]["prim_size"] for idx in tqdm(sampler)}
     def __iter__(self):
             #The VRAM required by the model in each batch is proportional to the number of unique atomic sites, or the length of the i axis
-            #Keep extending the batch with more crystals until the batch limit is exceeded
-            #Batch limit will be exceeded by at most 1 crystal to avoid throwing away indicies
+            #Keep extending the batch with more crystals until doing so again brings us over the batch size
+            #If extending the batch would bring it over the max batch size, yield the current batch and seed a new one
             sampler_iter = iter(self.sampler)
             batch = []
             size = 0
