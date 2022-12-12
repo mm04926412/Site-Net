@@ -405,7 +405,7 @@ class SiteNet_DIM(pl.LightningModule):
         Local_prior_loss = segment_csr(Local_prior_loss,Batch_Mask["CSR"],reduce="mean")
         #Get prior loss per batch
         Local_prior_loss = Local_prior_loss.flatten().mean()
-        Local_Environment_Loss = Local_Environment_Loss + 0.0*Local_prior_loss
+        Local_Environment_Loss = 1.0 * Local_Environment_Loss + 0.2*Local_prior_loss
         self.manual_backward(Local_Environment_Loss)
         local_opt.step()
 
@@ -429,7 +429,7 @@ class SiteNet_DIM(pl.LightningModule):
         Global_prior_score = F.softplus(-self.Global_Prior(Global_prior_samples))
         Global_posterior_score = F.softplus(self.Global_Prior(Global_Embedding_Features))
         Global_prior_loss = (Global_prior_score+Global_posterior_score).flatten().mean()
-        Global_Loss = Global_Loss + 0.0*Global_prior_loss
+        Global_Loss = 1.0 * Global_Loss + 0.2*Global_prior_loss
         self.manual_backward(Global_Loss)
         global_opt.step()
 
