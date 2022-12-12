@@ -316,7 +316,7 @@ class SiteNet_DIM(pl.LightningModule):
 
             self.Site_DIM = SiteNetDIMAttentionBlock(**config)
             self.Global_DIM = SiteNetDIMGlobal(**config)
-            self.Site_Prior = nn.Sequential(nn.Linear(config["attention_heads"]*config["site_dim_per_head"],256),nn.Mish(),nn.Linear(256,1))
+            self.Site_Prior = nn.Sequential(nn.Linear(config["site_bottleneck"],256),nn.Mish(),nn.Linear(256,1))
             self.Global_Prior = nn.Sequential(nn.Linear(config["post_pool_layers"][-1],256),nn.Mish(),nn.Linear(256,1))
             self.decoder = nn.Sequential(nn.Linear(self.config["post_pool_layers"][-1], 256),nn.Mish(),nn.Linear(256, 1))
 

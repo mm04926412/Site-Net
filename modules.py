@@ -6,6 +6,7 @@ from torch.nn import LayerNorm,InstanceNorm1d
 import numpy as np
 from torch_scatter import scatter_std,scatter_mean,segment_coo,segment_csr
 from torch_scatter.composite import scatter_std
+import sys
 
 ################################
 # Helper Functions and classes #
@@ -331,9 +332,8 @@ class SiteNetDIMGlobal(nn.Module):
         lin_norm="none",
         interaction_feature_size=3,
         attention_dim_interaction=64,
-        tdot=False,
-        attention_hidden_layers=[256,256],
-        k_softmax=-1,
+        global_dot_space = 256,
+        site_bottleneck = 64,
         distance_cutoff=-1,
         **kwargs,
     ):
@@ -361,9 +361,7 @@ class SiteNetDIMGlobal(nn.Module):
             nn.Linear(i, j)
             for i, j in pairwise(
                 (
-                    site_dim_per_head
-                    * attention_blocks
-                    * attention_heads,
+                    site_bottleneck,
                     *pre_pool_layers,
                 )
             )
@@ -382,8 +380,9 @@ class SiteNetDIMGlobal(nn.Module):
                 norm_dict[lin_norm](i) for i in post_pool_layers
             )
         self.af = af_dict[activation_function]()
-        self.classifier_hidden_layers = set_seq_af_norm([site_dim_per_head*attention_heads + post_pool_layers[-1], *classifier_hidden_layers],af_dict[activation_function],set_norm_dict[set_norm])
-        self.classifier = nn.Linear(classifier_hidden_layers[-1],1)
+
+        self.localenv_upscale = set_seq_af_norm([site_bottleneck,global_dot_space],af_dict[activation_function],set_norm_dict[set_norm])
+        self.global_upscale = set_seq_af_norm([post_pool_layers[-1],global_dot_space],af_dict[activation_function],set_norm_dict[set_norm])
 
     def forward(
         self,
@@ -391,6 +390,7 @@ class SiteNetDIMGlobal(nn.Module):
         Batch_Mask
     ):
         detached_LocalEnvironment_Features = LocalEnvironment_Features.detach().clone()
+        
         #Apply the pre pooling layers
         for pre_pool_layer, pre_pool_layer_norm in zip(
             self.pre_pool_layers, self.pre_pool_layers_norm
@@ -417,17 +417,13 @@ class SiteNetDIMGlobal(nn.Module):
                     self.af(post_pool_layer(Global_Representation))
                 )
         #Global_Representation_Sample = Global_Representation+torch.randn_like(Global_Representation_log_var)*torch.exp(Global_Representation_log_var/2)
-        Global_Representation_Sample = Global_Representation + 0.05*torch.randn_like(Global_Representation)
+        Global_Representation_Sample = self.global_upscale(Global_Representation + 0.05*torch.randn_like(Global_Representation))
+        local_env_samples = self.localenv_upscale(detached_LocalEnvironment_Features)
         #Roll the batch mask to get false indicies
         False_Batch_Mask_COO = torch.roll(Batch_Mask["COO"],len(Batch_Mask["COO"])//2,0)
-        False_Samples = torch.cat([Global_Representation_Sample[False_Batch_Mask_COO],detached_LocalEnvironment_Features],1)
-        False_Samples = self.classifier_hidden_layers(False_Samples)
-        False_Samples = self.classifier(False_Samples)
-        False_Score = F.softplus(False_Samples)
-        True_Samples = torch.cat([Global_Representation_Sample[Batch_Mask["COO"]],detached_LocalEnvironment_Features],1)
-        True_Samples = self.classifier_hidden_layers(True_Samples)
-        True_Samples = self.classifier(True_Samples)
-        True_Score = F.softplus(-True_Samples)
+
+        False_Score = F.softplus(torch.einsum("ik,ik->i",Global_Representation_Sample[False_Batch_Mask_COO],local_env_samples))
+        True_Score = F.softplus(-torch.einsum("ik,ik->i",Global_Representation_Sample[Batch_Mask["COO"]],local_env_samples))
         #Get DIM_loss per crystal
         DIM_loss = segment_csr(False_Score+True_Score,Batch_Mask["CSR"],reduce="mean").flatten().mean()
         #KL_loss = (0.5*Global_Representation**2+torch.exp(Global_Representation_log_var)-Global_Representation_log_var).flatten().mean()
@@ -439,9 +435,9 @@ class SiteNetDIMGlobal(nn.Module):
 
 class SiteNetDIMAttentionBlock(nn.Module):
     def __init__(
-        self, af="relu", set_norm="batch",tdot=False,k_softmax=-1,attention_hidden_layers=[256,256],classifier_hidden_layers=[64],
+        self, af="relu", set_norm="batch",tdot=False,k_softmax=-1,attention_hidden_layers=[256,256],
         site_dim_per_head = 16, attention_heads = 4, attention_dim_interaction = 16,embedding_size=100, site_bottleneck = 64,
-        site_feature_size=1,interaction_feature_size=3, **kwargs
+        site_feature_size=1,interaction_feature_size=3, site_dot_space=256,**kwargs
     ):
         super().__init__()
         self.full_elem_token_size = embedding_size + site_feature_size + 1
@@ -469,10 +465,10 @@ class SiteNetDIMAttentionBlock(nn.Module):
         self.ije_to_multihead = pairwise_seq_af_norm([2*self.site_dim + self.interaction_dim,*attention_hidden_layers],af_dict[af],pairwise_norm_dict[set_norm])
         self.pre_softmax_linear = nn.Linear(attention_hidden_layers[-1],attention_heads)
         self.ije_to_attention_features = pairwise_seq_af_norm([self.site_dim*2 + self.interaction_dim, self.glob_dim],af_dict[af],pairwise_norm_dict[set_norm])
-        self.global_linear = set_seq_af_norm([self.site_dim, self.site_dim],af_dict["none"],set_norm_dict[set_norm])
+        self.global_linear = set_seq_af_norm([self.site_dim, self.site_bottleneck],af_dict[af],set_norm_dict[set_norm])
         self.global_linear_std = set_seq_af_norm([self.site_dim, self.site_bottleneck],af_dict["none"],set_norm_dict["none"])
-        self.classifier_hidden_layers = set_seq_af_norm([self.site_dim + self.full_elem_token_size + interaction_feature_size, *classifier_hidden_layers],af_dict[af],pairwise_norm_dict[set_norm])
-        self.classifier = nn.Linear(classifier_hidden_layers[-1],1)
+        self.dim_upscale = set_seq_af_norm([self.site_bottleneck,site_dot_space],af_dict[af],set_norm_dict[set_norm])
+        self.sample_upscale = set_seq_af_norm([self.full_elem_token_size + interaction_feature_size,site_dot_space],af_dict[af],set_norm_dict[set_norm])
     @staticmethod
     def head_reshape(x,attention_heads):
         return x.reshape(*x.shape[:-1],x.shape[-1]//attention_heads,attention_heads)
@@ -511,44 +507,24 @@ class SiteNetDIMAttentionBlock(nn.Module):
         )
         #Combine the heads together
         x = torch.reshape(x,[x.shape[0],x.shape[1] * x.shape[2],],)
-        #Compute the new site features and append to the global summary
-        #x_log_var = self.global_linear_std(x)#g^S\sigma
         x= self.global_linear(x) #g^S
-        #x_sample = x + torch.randn_like(x_log_var)*torch.exp(x_log_var/2)
-        x_sample = x[Batch_Mask["attention_i"],:] + 0.05*torch.randn_like(x[Batch_Mask["attention_i"],:])
-        #Add VAE style noise
-        #x+=torch.randn(x.shape).to(x)*0.2
-        #Apply a 1/(r+1) weighting to the DIM loss so it converges with crystal size
+
         distance_weights = (detached_Interaction_Features[:,:,0]+1)**-2
         distance_weights_sum_reciprocal = (torch.sum((distance_weights*~Attention_Mask),1)**-1).unsqueeze(1)
-        #construct true features
-        true_queries = torch.cat([x_sample, detached_x_j, detached_Interaction_Features], axis=2)
-        #construct false features
-        #First sample is a completly fake local environment
-        #Second sample has false distances but the correct composition
-        #Third sample has the correct distances but the incorrect composition
-        #The false sample function rolls the dimension over by half of its length, this rollover provides the false samples
-        false_queries_1 = torch.cat([x_sample, self.false_sample(detached_x_j,0), self.false_sample(detached_Interaction_Features,0)], axis=2) #Everything is fake
-        #false_queries_2 = torch.cat([x_sample, detached_x_j, self.false_sample(detached_Interaction_Features,0)], axis=2) #Distances are fake
-        #false_queries_3 = torch.cat([x_sample, self.false_sample(detached_x_j,0), detached_Interaction_Features], axis=2) #Composition is fake
-        #Classify the queries, weighted by distance
-        #Apply hidden layers
-        false_queries_1 = self.classifier_hidden_layers(false_queries_1)
-            #false_queries_2 = self.classifier_hidden_layers(false_queries_2)
-            #false_queries_3 = self.classifier_hidden_layers(false_queries_3)
-        true_queries = self.classifier_hidden_layers(true_queries)
+
+        x_sample = self.dim_upscale(x + 0.05*torch.randn_like(x))[Batch_Mask["attention_i"],:]
+        true_queries = self.sample_upscale(torch.cat([detached_x_j, detached_Interaction_Features], axis=2))
+        false_queries = self.sample_upscale(torch.cat([self.false_sample(detached_x_j,0), self.false_sample(detached_Interaction_Features,0)], axis=2))
         #Compute classification score and normalize by distance
-        false_scores_1 = F.softplus(self.classifier(false_queries_1)).squeeze()*self.false_sample(distance_weights,0) #Need to weight with false distances
-            #false_scores_2 = F.softplus(self.classifier(false_queries_2)).squeeze()*self.false_sample(distance_weights,0) #Need to weight with false distances
-            #false_scores_3 = F.softplus(self.classifier(false_queries_3)).squeeze()*distance_weights
-        true_scores = F.softplus(-self.classifier(true_queries)).squeeze()*distance_weights
+        false_scores = F.softplus(torch.einsum("ijk,ijk->ij",x_sample,false_queries)).squeeze()*self.false_sample(distance_weights,0) #Need to weight with false distances
+        true_scores = F.softplus(-torch.einsum("ijk,ijk->ij",x_sample,true_queries)).squeeze()*distance_weights
+
         #Aggregate individual losses over the local environment, weighted by distance
-        false_scores_1 =  torch.sum(false_scores_1*self.false_sample(distance_weights_sum_reciprocal,0)*~self.false_sample(Attention_Mask,0),1)
-            #false_scores_2 =  torch.sum(false_scores_2*self.false_sample(distance_weights_sum_reciprocal,0)*~self.false_sample(Attention_Mask,0),1)
-            #false_scores_3 =  torch.sum(false_scores_3*distance_weights_sum_reciprocal*~Attention_Mask,1)
+        false_scores =  torch.sum(false_scores*self.false_sample(distance_weights_sum_reciprocal,0)*~self.false_sample(Attention_Mask,0),1)
         true_scores =  torch.sum(true_scores*distance_weights_sum_reciprocal*~Attention_Mask,1)
+
         #Combine losses
-        DIM_loss = (true_scores+false_scores_1).squeeze()
+        DIM_loss = (true_scores+false_scores).squeeze()
             #DIM_loss = (true_scores+(false_scores_1+false_scores_2+false_scores_3)/3).squeeze()
         #Calculate weighted loss per crystal
         DIM_loss = segment_csr(DIM_loss,Batch_Mask["CSR"],reduce="mean")
