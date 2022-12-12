@@ -1,4 +1,4 @@
-label: "PaperParams"
+label: "PaperParams_cutoff_3"
 
 ###############
 #Features used#
@@ -16,7 +16,7 @@ Interaction_Features:
   name: non_sine_coulomb_matrix
 
 site_feature_size: 8
-embedding_size: 115
+embedding_size: 92
 Site_Features:
 - Featurizer_KArgs:
     properties:
@@ -65,22 +65,22 @@ activation_function: mish
 set_norm: layer
 lin_norm: layer
 
-site_dim_per_head: 32
-site_bottleneck: 64
-attention_dim_interaction: 32
+site_dim_per_head: 30
+attention_dim_interaction: 16
 
-attention_heads: 4
-attention_blocks: 1
-distance_cutoff: -1 #No cut off, positive values add a cut-off measured in angstroms, made performance worse in testing
+attention_heads: 3
+attention_blocks: 2
+distance_cutoff: 3 #No cut off, positive values add a cut-off measured in angstroms, made performance worse in testing
 attention_hidden_layers:
 - 225
 k_softmax: -1 #No k softmax, available functionality but unused
 
 #Layers post attention blocks
 pre_pool_layers:
-- 512
+- 94
 sym_func: mean
 post_pool_layers:
-- 256
-- 64
+- 200
+- 200
+- 200
 last_af_func: TReLU

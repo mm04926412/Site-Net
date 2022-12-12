@@ -440,13 +440,14 @@ class SiteNetDIMGlobal(nn.Module):
 class SiteNetDIMAttentionBlock(nn.Module):
     def __init__(
         self, af="relu", set_norm="batch",tdot=False,k_softmax=-1,attention_hidden_layers=[256,256],classifier_hidden_layers=[64],
-        site_dim_per_head = 16, attention_heads = 4, attention_dim_interaction = 16,embedding_size=100,
+        site_dim_per_head = 16, attention_heads = 4, attention_dim_interaction = 16,embedding_size=100, site_bottleneck = 64,
         site_feature_size=1,interaction_feature_size=3, **kwargs
     ):
         super().__init__()
         self.full_elem_token_size = embedding_size + site_feature_size + 1
         self.heads = attention_heads
         self.site_dim = site_dim_per_head * attention_heads
+        self.site_bottleneck = site_bottleneck
         self.interaction_dim = attention_dim_interaction * attention_heads
         self.glob_dim = site_dim_per_head
         self.af = af_dict[af]()
@@ -469,7 +470,7 @@ class SiteNetDIMAttentionBlock(nn.Module):
         self.pre_softmax_linear = nn.Linear(attention_hidden_layers[-1],attention_heads)
         self.ije_to_attention_features = pairwise_seq_af_norm([self.site_dim*2 + self.interaction_dim, self.glob_dim],af_dict[af],pairwise_norm_dict[set_norm])
         self.global_linear = set_seq_af_norm([self.site_dim, self.site_dim],af_dict["none"],set_norm_dict[set_norm])
-        self.global_linear_std = set_seq_af_norm([self.site_dim, self.site_dim],af_dict["none"],set_norm_dict["none"])
+        self.global_linear_std = set_seq_af_norm([self.site_dim, self.site_bottleneck],af_dict["none"],set_norm_dict["none"])
         self.classifier_hidden_layers = set_seq_af_norm([self.site_dim + self.full_elem_token_size + interaction_feature_size, *classifier_hidden_layers],af_dict[af],pairwise_norm_dict[set_norm])
         self.classifier = nn.Linear(classifier_hidden_layers[-1],1)
     @staticmethod
@@ -528,26 +529,27 @@ class SiteNetDIMAttentionBlock(nn.Module):
         #Third sample has the correct distances but the incorrect composition
         #The false sample function rolls the dimension over by half of its length, this rollover provides the false samples
         false_queries_1 = torch.cat([x_sample, self.false_sample(detached_x_j,0), self.false_sample(detached_Interaction_Features,0)], axis=2) #Everything is fake
-        false_queries_2 = torch.cat([x_sample, detached_x_j, self.false_sample(detached_Interaction_Features,0)], axis=2) #Distances are fake
-        false_queries_3 = torch.cat([x_sample, self.false_sample(detached_x_j,0), detached_Interaction_Features], axis=2) #Composition is fake
+        #false_queries_2 = torch.cat([x_sample, detached_x_j, self.false_sample(detached_Interaction_Features,0)], axis=2) #Distances are fake
+        #false_queries_3 = torch.cat([x_sample, self.false_sample(detached_x_j,0), detached_Interaction_Features], axis=2) #Composition is fake
         #Classify the queries, weighted by distance
         #Apply hidden layers
         false_queries_1 = self.classifier_hidden_layers(false_queries_1)
-        false_queries_2 = self.classifier_hidden_layers(false_queries_2)
-        false_queries_3 = self.classifier_hidden_layers(false_queries_3)
+            #false_queries_2 = self.classifier_hidden_layers(false_queries_2)
+            #false_queries_3 = self.classifier_hidden_layers(false_queries_3)
         true_queries = self.classifier_hidden_layers(true_queries)
         #Compute classification score and normalize by distance
         false_scores_1 = F.softplus(self.classifier(false_queries_1)).squeeze()*self.false_sample(distance_weights,0) #Need to weight with false distances
-        false_scores_2 = F.softplus(self.classifier(false_queries_2)).squeeze()*self.false_sample(distance_weights,0) #Need to weight with false distances
-        false_scores_3 = F.softplus(self.classifier(false_queries_3)).squeeze()*distance_weights
-        true_scores = F.softplus(self.classifier(-true_queries)).squeeze()*distance_weights
+            #false_scores_2 = F.softplus(self.classifier(false_queries_2)).squeeze()*self.false_sample(distance_weights,0) #Need to weight with false distances
+            #false_scores_3 = F.softplus(self.classifier(false_queries_3)).squeeze()*distance_weights
+        true_scores = F.softplus(-self.classifier(true_queries)).squeeze()*distance_weights
         #Aggregate individual losses over the local environment, weighted by distance
         false_scores_1 =  torch.sum(false_scores_1*self.false_sample(distance_weights_sum_reciprocal,0)*~self.false_sample(Attention_Mask,0),1)
-        false_scores_2 =  torch.sum(false_scores_2*self.false_sample(distance_weights_sum_reciprocal,0)*~self.false_sample(Attention_Mask,0),1)
-        false_scores_3 =  torch.sum(false_scores_3*distance_weights_sum_reciprocal*~Attention_Mask,1)
+            #false_scores_2 =  torch.sum(false_scores_2*self.false_sample(distance_weights_sum_reciprocal,0)*~self.false_sample(Attention_Mask,0),1)
+            #false_scores_3 =  torch.sum(false_scores_3*distance_weights_sum_reciprocal*~Attention_Mask,1)
         true_scores =  torch.sum(true_scores*distance_weights_sum_reciprocal*~Attention_Mask,1)
         #Combine losses
-        DIM_loss = (true_scores+(false_scores_1+false_scores_2+false_scores_3)/3).squeeze()
+        DIM_loss = (true_scores+false_scores_1).squeeze()
+            #DIM_loss = (true_scores+(false_scores_1+false_scores_2+false_scores_3)/3).squeeze()
         #Calculate weighted loss per crystal
         DIM_loss = segment_csr(DIM_loss,Batch_Mask["CSR"],reduce="mean")
         #calculate weighted loss per batch
@@ -555,7 +557,7 @@ class SiteNetDIMAttentionBlock(nn.Module):
         #KL_loss = (0.5*x**2+torch.exp(x_log_var)-x_log_var).flatten().mean()
         KL_loss = 0
 
-        #loss = DIM_loss + 0*KL_loss
         loss = DIM_loss
+        #loss = DIM_loss + 0.1*KL_loss
 
         return x,loss,DIM_loss,KL_loss

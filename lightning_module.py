@@ -406,8 +406,8 @@ class SiteNet_DIM(pl.LightningModule):
         #Get prior loss per batch
         Local_prior_loss = Local_prior_loss.flatten().mean()
         Local_Environment_Loss = Local_Environment_Loss + 0.2*Local_prior_loss
-        #self.manual_backward(Local_Environment_Loss)
-        #local_opt.step()
+        self.manual_backward(Local_Environment_Loss)
+        local_opt.step()
 
         #Adversarially train the prior discriminator
         local_prior_opt.zero_grad()
@@ -419,8 +419,8 @@ class SiteNet_DIM(pl.LightningModule):
         Site_prior_loss = segment_csr(Site_prior_loss,Batch_Mask["CSR"],reduce="mean")
         #Get prior loss per batch
         Site_prior_loss = Site_prior_loss.flatten().mean()
-        #self.manual_backward(Site_prior_loss)
-        #local_prior_opt.step()
+        self.manual_backward(Site_prior_loss)
+        local_prior_opt.step()
 
         #Perform a step on creating global environment representations, loss depends on mutual information and being able to trick the prior discriminator
         global_opt.zero_grad()
@@ -430,16 +430,16 @@ class SiteNet_DIM(pl.LightningModule):
         Global_posterior_score = F.softplus(self.Global_Prior(Global_Embedding_Features))
         Global_prior_loss = (Global_prior_score+Global_posterior_score).flatten().mean()
         Global_Loss = Global_Loss + 0.2*Global_prior_loss
-        #self.manual_backward(Global_Loss)
-        #global_opt.step()
+        self.manual_backward(Global_Loss)
+        global_opt.step()
 
         #Train the prior discriminator
         global_prior_opt.zero_grad()
         Global_prior_score = F.softplus(self.Global_Prior(Global_prior_samples))
         Global_posterior_score = F.softplus(-self.Global_Prior(Global_Embedding_Features.detach().clone()))
         Global_prior_loss = (Global_prior_score+Global_posterior_score).flatten().mean()
-        #self.manual_backward(Global_prior_loss)
-        #global_prior_opt.step()
+        self.manual_backward(Global_prior_loss)
+        global_prior_opt.step()
 
         #Perform a step on predicting the band gap with the learnt global embedding
         task_opt.zero_grad()
