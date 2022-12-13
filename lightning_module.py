@@ -437,8 +437,8 @@ class SiteNet_DIM(pl.LightningModule):
         global_prior_opt.zero_grad()
         Global_prior_score = F.softplus(self.Global_Prior(Global_prior_samples))
         Global_posterior_score = F.softplus(-self.Global_Prior(Global_Embedding_Features.detach().clone()))
-        Global_prior_loss = (Global_prior_score+Global_posterior_score).flatten().mean()
-        self.manual_backward(Global_prior_loss)
+        Global_prior_loss_discrim = (Global_prior_score+Global_posterior_score).flatten().mean()
+        self.manual_backward(Global_prior_loss_discrim)
         global_prior_opt.step()
 
         #Perform a step on predicting the band gap with the learnt global embedding
@@ -452,7 +452,7 @@ class SiteNet_DIM(pl.LightningModule):
         #"Global_KL_loss":Global_KL_loss,
 
         self.log_dict({"Local_Loss":Local_Environment_Loss,"Global_Loss":Global_Loss,"task_loss":MAE,"Local_Environment_DIM_Loss":Local_Environment_DIM_loss,
-        "Global_DIM_loss":Global_DIM_loss,"Local_prior_loss":Site_prior_loss,"Global_prior_loss":Global_prior_loss},prog_bar=True)
+        "Global_DIM_loss":Global_DIM_loss,"Local_prior_loss":Local_prior_loss,"Global_prior_loss":Global_prior_loss},prog_bar=True)
     #Makes sure the model is in eval mode then passes a validation sample through the model
     def validation_step(self, batch_dictionary, batch_dictionary_idx):
         self.eval()

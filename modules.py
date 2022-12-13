@@ -411,7 +411,7 @@ class SiteNetDIMGlobal(nn.Module):
             self.post_pool_layers, self.post_pool_layers_norm)
         ):
             if idx == len(self.post_pool_layers)-1:
-                Global_Representation = post_pool_layer_norm(post_pool_layer(Global_Representation))
+                Global_Representation = post_pool_layer(Global_Representation)
             else:
                 Global_Representation = post_pool_layer_norm(
                     self.af(post_pool_layer(Global_Representation))
@@ -465,7 +465,7 @@ class SiteNetDIMAttentionBlock(nn.Module):
         self.ije_to_multihead = pairwise_seq_af_norm([2*self.site_dim + self.interaction_dim,*attention_hidden_layers],af_dict[af],pairwise_norm_dict[set_norm])
         self.pre_softmax_linear = nn.Linear(attention_hidden_layers[-1],attention_heads)
         self.ije_to_attention_features = pairwise_seq_af_norm([self.site_dim*2 + self.interaction_dim, self.glob_dim],af_dict[af],pairwise_norm_dict[set_norm])
-        self.global_linear = set_seq_af_norm([self.site_dim, self.site_bottleneck],af_dict["none"],set_norm_dict[set_norm])
+        self.global_linear = set_seq_af_norm([self.site_dim, self.site_bottleneck],af_dict["none"],set_norm_dict["none"])
         self.global_linear_std = set_seq_af_norm([self.site_dim, self.site_bottleneck],af_dict["none"],set_norm_dict["none"])
         self.dim_upscale = set_seq_af_norm([self.site_bottleneck,site_dot_space],af_dict[af],set_norm_dict[set_norm])
         self.sample_upscale = set_seq_af_norm([self.full_elem_token_size + interaction_feature_size,site_dot_space],af_dict[af],set_norm_dict[set_norm])
