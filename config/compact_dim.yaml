@@ -67,7 +67,7 @@ lin_norm: layer
 
 site_dim_per_head: 32
 site_bottleneck: 64
-site_dot_space: 256
+site_dot_space: 512
 attention_dim_interaction: 32
 
 attention_heads: 4
@@ -80,9 +80,10 @@ k_softmax: -1 #No k softmax, available functionality but unused
 #Layers post attention blocks
 pre_pool_layers:
 - 512
+- 1024
 sym_func: mean
 post_pool_layers:
 - 256
 - 64
-global_dot_space: 256
+global_dot_space: 512
 last_af_func: TReLU

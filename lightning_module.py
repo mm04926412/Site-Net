@@ -342,43 +342,25 @@ class SiteNet_DIM(pl.LightningModule):
         return torch.cat([Atomic_Embedding, *features], dim=1)
 
     #Inference mode, return the prediction
-    def forward(self, b, batch_size=16,return_truth = False):
+    def forward(self, b, batch_size=16):       
         self.eval()
         lob = [b[i : min(i + batch_size,len(b))] for i in range(0, len(b), batch_size)]
         Encoding_list = []
-        targets_list= []
         print("Inference in batches of %s" % batch_size)
         for inference_batch in tqdm(lob):
             batch_dictionary = collate_fn(inference_batch, inference=True)
             Attention_Mask = batch_dictionary["Attention_Mask"]
-            Site_Feature = batch_dictionary["Site_Feature_Tensor"]
+            Site_Features = batch_dictionary["Site_Feature_Tensor"]
             Atomic_ID = batch_dictionary["Atomic_ID"]
             Interaction_Features = batch_dictionary["Interaction_Feature_Tensor"]
             Oxidation_State = batch_dictionary["Oxidation_State"]
-            concat_embedding = self.input_handler(
-                Atomic_ID, [Site_Feature, Oxidation_State]
-            )
-            with torch.no_grad():
-                Encoding = self.encoder.forward(
-                    concat_embedding,
-                    Interaction_Features,
-                    Attention_Mask,
-                    return_std=False,
-                )
-                Encoding = af_dict[self.config["last_af_func"]](self.decoder(Encoding))
-                if self.config["regularization strategy"] == "l1_sparse":
-                    Encoding = F.relu(Encoding)
-                if self.config["regularization strategy"] == "kl_sparse":
-                    Encoding = F.relu(Encoding)
-                Encoding_list.append(Encoding)
-                targets_list.append(batch_dictionary["target"])
+            Batch_Mask = batch_dictionary["Batch_Mask"]
+            Site_Features = self.input_handler(Atomic_ID, [Site_Features, Oxidation_State])
+            Local_Environment_Features,Local_Environment_Loss,Local_Environment_DIM_loss,Local_Environment_KL_loss = self.Site_DIM(Site_Features, Interaction_Features, Attention_Mask, Batch_Mask)
+            Global_Embedding_Features,Global_Loss,Global_DIM_loss,Global_KL_loss = self.Global_DIM(Local_Environment_Features.detach().clone(),Batch_Mask)
+            Encoding_list.append(Global_Embedding_Features)
         Encoding = torch.cat(Encoding_list, dim=0)
-        targets = torch.cat(targets_list, dim=0)
-        self.train()
-        if return_truth:
-            return [Encoding,targets]
-        else:
-            return Encoding
+        return Encoding
 
     #Makes sure the model is in training mode, passes a batch through the model, then back propogates
     def training_step(self, batch_dictionary, batch_dictionary_idx):
@@ -396,7 +378,7 @@ class SiteNet_DIM(pl.LightningModule):
         #Perform a step on creating local environment representations while tricking the prior discriminator
         local_opt.zero_grad()
         Local_Environment_Features,Local_Environment_Loss,Local_Environment_DIM_loss,Local_Environment_KL_loss = self.Site_DIM(Site_Features, Interaction_Features, Attention_Mask, Batch_Mask)
-        Local_prior_samples = torch.randn_like(Local_Environment_Features)
+        Local_prior_samples = torch.rand_like(Local_Environment_Features)
         Local_prior_score = F.softplus(-self.Site_Prior(Local_prior_samples))
         Local_posterior_score = F.softplus(self.Site_Prior(Local_Environment_Features))
         #Get prior loss per site
@@ -405,7 +387,7 @@ class SiteNet_DIM(pl.LightningModule):
         Local_prior_loss = segment_csr(Local_prior_loss,Batch_Mask["CSR"],reduce="mean")
         #Get prior loss per batch
         Local_prior_loss = Local_prior_loss.flatten().mean()
-        Local_Environment_Loss = 1.0 * Local_Environment_Loss + 0.2*Local_prior_loss
+        Local_Environment_Loss = 1.0 * Local_Environment_Loss + 0.1*Local_prior_loss
         self.manual_backward(Local_Environment_Loss)
         local_opt.step()
 
@@ -425,11 +407,11 @@ class SiteNet_DIM(pl.LightningModule):
         #Perform a step on creating global environment representations, loss depends on mutual information and being able to trick the prior discriminator
         global_opt.zero_grad()
         Global_Embedding_Features,Global_Loss,Global_DIM_loss,Global_KL_loss = self.Global_DIM(Local_Environment_Features.detach().clone(),Batch_Mask)
-        Global_prior_samples = torch.randn_like(Global_Embedding_Features)
+        Global_prior_samples = torch.rand_like(Global_Embedding_Features)
         Global_prior_score = F.softplus(-self.Global_Prior(Global_prior_samples))
         Global_posterior_score = F.softplus(self.Global_Prior(Global_Embedding_Features))
         Global_prior_loss = (Global_prior_score+Global_posterior_score).flatten().mean()
-        Global_Loss = 1.0 * Global_Loss + 0.2*Global_prior_loss
+        Global_Loss = 1.0 * Global_Loss + 0.1*Global_prior_loss
         self.manual_backward(Global_Loss)
         global_opt.step()
 
