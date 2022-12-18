@@ -1,4 +1,4 @@
-label: "compact_dim"
+label: "compact_dim_prior_dominated"
 
 ###############
 #Features used#
@@ -37,8 +37,8 @@ Site_Features:
 
 #Assign relative weights to the components
 DIM_loss: 1.0
-Prior_loss: 0.1
-KL_loss: 0.1
+Prior_loss: 0.5
+KL_loss: 0.0
 
 #Dynamic beatch size is based on number of unique sites not number of crystals
 dynamic_batch: !!bool True

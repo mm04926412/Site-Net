@@ -42,6 +42,7 @@ if __name__ == "__main__":
     parser.add_argument("-n", "--limit", default=None,type=int)
     parser.add_argument("-m", "--model_name", default=None,type=str)
     parser.add_argument("-w", "--number_of_worker_processes", default=1,type=int)
+    parser.add_argument("-u", "--cell_size_limit", default = None )
     args = parser.parse_args()
     torch.set_num_threads(args.number_of_worker_processes)
     try:
@@ -63,9 +64,11 @@ if __name__ == "__main__":
     config["Max_Samples"] = args.limit
     config["dynamic_batch"] = False
     config["Batch_Size"] = 128
+    if args.cell_size_limit != None:
+        args.cell_size_limit = int(args.cell_size_limit)
     Dataset = DIM_h5_Data_Module(
         config,
-        max_len=None,
+        max_len=args.cell_size_limit,
         ignore_errors=True,
         overwrite=False,
         cpus=args.number_of_worker_processes,
@@ -81,11 +84,12 @@ if __name__ == "__main__":
     y = [Dataset.Dataset[i]["target"] for i in range(len(Dataset.Dataset))]
     model.fit(results[:int(len(results)*(3/4))], y[:int(len(results)*(3/4))])
     print("Initial Parameters")
-    print(model.score(results[int(len(results)*3/4):], y[int(len(results)*3/4):]))
-    print(np.mean(np.absolute(model.predict(results[int(len(results)*3/4):])-y[int(len(results)*3/4):])))
+    print("R2: " + str(model.score(results[int(len(results)*3/4):], y[int(len(results)*3/4):])))
+    print("MAE (Non-objective): " + str(np.mean(np.absolute(model.predict(results[int(len(results)*3/4):])-y[int(len(results)*3/4):]))))
+    print("MSE: " + str(np.mean(np.array(model.predict(results[int(len(results)*3/4):])-y[int(len(results)*3/4):])**2)))
 
     plt.figure()
-    plt.scatter(tsne[0],tsne[1],c=y)
+    plt.scatter(tsne[0],tsne[1],c=y,s=0.7)
     plt.savefig("tsne_initial.png")
 
     print(Dataset.Dataset[0].keys())
@@ -102,11 +106,12 @@ if __name__ == "__main__":
     y = [Dataset.Dataset[i]["target"] for i in range(len(Dataset.Dataset))]
     model.fit(results[:int(len(results)*(3/4))], y[:int(len(results)*(3/4))])
     print("DIM")
-    print(model.score(results[int(len(results)*3/4):], y[int(len(results)*3/4):]))
-    print(np.mean(np.absolute(model.predict(results[int(len(results)*3/4):])-y[int(len(results)*3/4):])))
+    print("R2: " + str(model.score(results[int(len(results)*3/4):], y[int(len(results)*3/4):])))
+    print("MAE (Non-objective): " + str(np.mean(np.absolute(model.predict(results[int(len(results)*3/4):])-y[int(len(results)*3/4):]))))
+    print("MSE: " + str(np.mean(np.array(model.predict(results[int(len(results)*3/4):])-y[int(len(results)*3/4):])**2)))
 
     plt.figure()
-    plt.scatter(tsne[0],tsne[1],c=y)
+    plt.scatter(tsne[0],tsne[1],c=y,s=0.7)
     plt.savefig("tsne.png")
 
     print(Dataset.Dataset[0].keys())

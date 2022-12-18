@@ -1,4 +1,4 @@
-label: "compact_dim"
+label: "compact_dim_highlr"
 
 ###############
 #Features used#
@@ -38,14 +38,13 @@ Site_Features:
 #Assign relative weights to the components
 DIM_loss: 1.0
 Prior_loss: 0.1
-KL_loss: 0.1
 
 #Dynamic beatch size is based on number of unique sites not number of crystals
 dynamic_batch: !!bool True
 Batch_Size: 1200
 
 #Pytorch lightning optimizer name and hyper parameters
-Learning_Rate: 0.0008125971481941902
+Learning_Rate: 0.001
 Optimizer:
   Kwargs:
     amsgrad: true
