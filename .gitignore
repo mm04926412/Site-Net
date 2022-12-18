@@ -17,4 +17,5 @@ inference_job.sh
 *.err
 *.out
 *.zip
+*.pk
 
