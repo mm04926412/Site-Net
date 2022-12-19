@@ -99,11 +99,20 @@ class process_structures():
         images = len(supercell)//len(struct)
         #Matbench band gap dataset does not contain disorder, but this code is general
         if not supercell.is_ordered:
-            pass
-            oxi_dec = AutoOxiStateDecorationTransformation()
-            supercell= oxi_dec.apply_transformation(supercell)
-            order_trans = OrderDisorderedStructureTransformation()
-            supercell = order_trans.apply_transformation(supercell)
+            try:
+                oxi_dec = AutoOxiStateDecorationTransformation()
+                supercell= oxi_dec.apply_transformation(supercell)
+                discrete = DiscretizeOccupanciesTransformation(10)
+                supercell = discrete.apply_transformation(supercell)
+                order_trans = OrderDisorderedStructureTransformation()
+                supercell = order_trans.apply_transformation(supercell)
+                prim_size = len(supercell)
+                images = 1
+                print("Succeed at ordering disordered cell")
+            except Exception as e:
+                print(e)
+                print("Failed to order disordered cell")
+                return None
         return supercell,prim_size,images
 
 def generate_crystal_dictionary(struc_and_target):
@@ -164,13 +173,14 @@ def dataset_to_hdf5(inputs,outputs,h5_file_name,cpus,supercell,supercell_size):
     processed_structures = [
         i for i in tqdm(pool.imap(processor.process_structure, [i[1] for i in structure_list]))
     ]
+    print("STRUCTURES ARE NOW PROCESSED")
     pool.close()
     pool.join()
     pool.terminate()
     #Create tuple of processed structure, target proprety, size of primitive unit cell, and number of images
     processed_structures = [
         (processed_structures[i][0], structure_list[i][2],processed_structures[i][1],processed_structures[i][2])
-        for i in range(len(structure_list))
+        for i in range(len(structure_list)) if processed_structures[i] != None
     ]
     #Create a dictionary mapping each dataset index to the generated tuples
     structure_dict = {i[0]: j for i, j in tqdm(zip(structure_list, processed_structures))}
@@ -199,9 +209,18 @@ if __name__ == "__main__":
     else:
         raise(Exception("Need to specify either --primitive or --cubic_supercell on commandline, with -s argument controlling supercell size"))
     
+    def read_cif_try(file):
+        try:
+            return Structure.from_str(cif_zip.read(file).decode("utf-8"),"cif")
+        except:
+            print("FAILED TO READ CIF")
+            return None
+
     with ZipFile(args.cif_zip,"r") as cif_zip:
-        data = pd.read_csv(args.data_csv)
-        data["structure"] = [Structure.from_str(cif_zip.read(i).decode("utf-8"),"cif") for i in data["file"]]
+        tqdm.pandas()
+        data = pd.read_csv(args.data_csv)[:100]
+        data["structure"] = data["file"].progress_apply(read_cif_try)
+        data = data.dropna()
         structures = pd.Series(data["structure"],data.index)
         targets = pd.Series(data["target"],data.index)
         dataset_to_hdf5(structures,targets,args.h5_path,args.number_of_worker_processes,supercell,supercell_size)

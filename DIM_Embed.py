@@ -28,6 +28,8 @@ from torch import nn
 from sklearn.manifold import TSNE
 import matplotlib.pyplot as plt
 from sklearn.ensemble import RandomForestRegressor
+from sklearn.neural_network import MLPRegressor
+from sklearn.linear_model import LinearRegression
 import pickle as pk
 #monkeypatches
 
@@ -80,10 +82,27 @@ if __name__ == "__main__":
     results = pd.DataFrame(results.detach().numpy())
     tsne =np.transpose(TSNE().fit_transform(results))
     results.to_csv("embeddings_initial.csv")
+
     model = RandomForestRegressor()
     y = [Dataset.Dataset[i]["target"] for i in range(len(Dataset.Dataset))]
     model.fit(results[:int(len(results)*(3/4))], y[:int(len(results)*(3/4))])
-    print("Initial Parameters")
+    print("Initial RF")
+    print("R2: " + str(model.score(results[int(len(results)*3/4):], y[int(len(results)*3/4):])))
+    print("MAE (Non-objective): " + str(np.mean(np.absolute(model.predict(results[int(len(results)*3/4):])-y[int(len(results)*3/4):]))))
+    print("MSE: " + str(np.mean(np.array(model.predict(results[int(len(results)*3/4):])-y[int(len(results)*3/4):])**2)))
+
+    model = MLPRegressor()
+    y = [Dataset.Dataset[i]["target"] for i in range(len(Dataset.Dataset))]
+    model.fit(results[:int(len(results)*(3/4))], y[:int(len(results)*(3/4))])
+    print("Initial NN")
+    print("R2: " + str(model.score(results[int(len(results)*3/4):], y[int(len(results)*3/4):])))
+    print("MAE (Non-objective): " + str(np.mean(np.absolute(model.predict(results[int(len(results)*3/4):])-y[int(len(results)*3/4):]))))
+    print("MSE: " + str(np.mean(np.array(model.predict(results[int(len(results)*3/4):])-y[int(len(results)*3/4):])**2)))
+
+    model = LinearRegression()
+    y = [Dataset.Dataset[i]["target"] for i in range(len(Dataset.Dataset))]
+    model.fit(results[:int(len(results)*(3/4))], y[:int(len(results)*(3/4))])
+    print("Initial Lin")
     print("R2: " + str(model.score(results[int(len(results)*3/4):], y[int(len(results)*3/4):])))
     print("MAE (Non-objective): " + str(np.mean(np.absolute(model.predict(results[int(len(results)*3/4):])-y[int(len(results)*3/4):]))))
     print("MSE: " + str(np.mean(np.array(model.predict(results[int(len(results)*3/4):])-y[int(len(results)*3/4):])**2)))
@@ -102,10 +121,27 @@ if __name__ == "__main__":
     results = pd.DataFrame(results.detach().numpy())
     tsne =np.transpose(TSNE().fit_transform(results))
     results.to_csv("embeddings.csv")
+
     model = RandomForestRegressor()
     y = [Dataset.Dataset[i]["target"] for i in range(len(Dataset.Dataset))]
     model.fit(results[:int(len(results)*(3/4))], y[:int(len(results)*(3/4))])
-    print("DIM")
+    print("DIM RF")
+    print("R2: " + str(model.score(results[int(len(results)*3/4):], y[int(len(results)*3/4):])))
+    print("MAE (Non-objective): " + str(np.mean(np.absolute(model.predict(results[int(len(results)*3/4):])-y[int(len(results)*3/4):]))))
+    print("MSE: " + str(np.mean(np.array(model.predict(results[int(len(results)*3/4):])-y[int(len(results)*3/4):])**2)))
+
+    model = MLPRegressor()
+    y = [Dataset.Dataset[i]["target"] for i in range(len(Dataset.Dataset))]
+    model.fit(results[:int(len(results)*(3/4))], y[:int(len(results)*(3/4))])
+    print("DIM NN")
+    print("R2: " + str(model.score(results[int(len(results)*3/4):], y[int(len(results)*3/4):])))
+    print("MAE (Non-objective): " + str(np.mean(np.absolute(model.predict(results[int(len(results)*3/4):])-y[int(len(results)*3/4):]))))
+    print("MSE: " + str(np.mean(np.array(model.predict(results[int(len(results)*3/4):])-y[int(len(results)*3/4):])**2)))
+
+    model = LinearRegression()
+    y = [Dataset.Dataset[i]["target"] for i in range(len(Dataset.Dataset))]
+    model.fit(results[:int(len(results)*(3/4))], y[:int(len(results)*(3/4))])
+    print("DIM Lin")
     print("R2: " + str(model.score(results[int(len(results)*3/4):], y[int(len(results)*3/4):])))
     print("MAE (Non-objective): " + str(np.mean(np.absolute(model.predict(results[int(len(results)*3/4):])-y[int(len(results)*3/4):]))))
     print("MSE: " + str(np.mean(np.array(model.predict(results[int(len(results)*3/4):])-y[int(len(results)*3/4):])**2)))
@@ -117,10 +153,6 @@ if __name__ == "__main__":
     print(Dataset.Dataset[0].keys())
     results["Structure"] = [i["structure"] for i in Dataset.Dataset]
     pk.dump(results,open("embeddings_with_structures.pk","wb"))
-
-
-
-
 
 
 

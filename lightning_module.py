@@ -430,7 +430,7 @@ class SiteNet_DIM(pl.LightningModule):
         #Perform a step on predicting the band gap with the learnt global embedding
         task_opt.zero_grad()
         Prediction = self.decoder(Global_Embedding_Features.detach().clone())
-        MAE = torch.abs(Prediction - batch_dictionary["target"]).mean()
+        MAE = torch.abs(Prediction.flatten() - batch_dictionary["target"].flatten()).mean()
         self.manual_backward(MAE)
         task_opt.step()
 
@@ -460,7 +460,7 @@ class SiteNet_DIM(pl.LightningModule):
         Global_Embedding_Features,Global_DIM_loss,Global_KL_loss = self.Global_DIM(Local_Environment_Features,Batch_Mask,KL=KL)
         #Try and perform shallow property prediction using the global representation as a sanity check
         Prediction = self.decoder(Global_Embedding_Features)
-        MAE = torch.abs(Prediction - batch_dictionary["target"]).mean()
+        MAE = torch.abs(Prediction.flatten() - batch_dictionary["target"].flatten()).mean()
         return [MAE,Local_Environment_DIM_loss,Local_Environment_KL_loss,Global_DIM_loss,Global_KL_loss]
 
     #Configures the optimizer from the config
