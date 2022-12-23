@@ -377,7 +377,7 @@ class SiteNet_DIM(pl.LightningModule):
 
         #Perform a step on creating local environment representations while tricking the prior discriminator
         local_opt.zero_grad()
-        if self.config["KL_loss"] > 0: #If the KL Loss isn't being trained it will inevitably cause NAN values, so it gets turned off
+        if self.config["KL_loss_local"] > 0: #If the KL Loss isn't being trained it will inevitably cause NAN values, so it gets turned off
             KL = True
         else:
             KL = False
@@ -391,7 +391,7 @@ class SiteNet_DIM(pl.LightningModule):
         Local_prior_loss = segment_csr(Local_prior_loss,Batch_Mask["CSR"],reduce="mean")
         #Get prior loss per batch
         Local_prior_loss = Local_prior_loss.flatten().mean()
-        Local_Environment_Loss = self.config["DIM_loss"]*Local_Environment_DIM_loss + self.config["Prior_loss"]*Local_prior_loss + self.config["KL_loss"]*Local_Environment_KL_loss
+        Local_Environment_Loss = self.config["DIM_loss_local"]*Local_Environment_DIM_loss + self.config["Prior_loss_local"]*Local_prior_loss + self.config["KL_loss_local"]*Local_Environment_KL_loss
         self.manual_backward(Local_Environment_Loss)
         local_opt.step()
 
@@ -410,12 +410,16 @@ class SiteNet_DIM(pl.LightningModule):
 
         #Perform a step on creating global environment representations, loss depends on mutual information and being able to trick the prior discriminator
         global_opt.zero_grad()
+        if self.config["KL_loss_global"] > 0: #If the KL Loss isn't being trained it will inevitably cause NAN values, so it gets turned off
+            KL = True
+        else:
+            KL = False
         Global_Embedding_Features,Global_DIM_loss,Global_KL_loss = self.Global_DIM(Local_Environment_Features.detach().clone(),Batch_Mask,KL=KL)
         Global_prior_samples = torch.rand_like(Global_Embedding_Features)
         Global_prior_score = F.softplus(-self.Global_Prior(Global_prior_samples))
         Global_posterior_score = F.softplus(self.Global_Prior(Global_Embedding_Features))
         Global_prior_loss = (Global_prior_score+Global_posterior_score).flatten().mean()
-        Global_Loss = self.config["DIM_loss"]*Global_DIM_loss + self.config["Prior_loss"]*Global_prior_loss + self.config["KL_loss"]*Global_KL_loss
+        Global_Loss = self.config["DIM_loss_global"]*Global_DIM_loss + self.config["Prior_loss_global"]*Global_prior_loss + self.config["KL_loss_global"]*Global_KL_loss
         self.manual_backward(Global_Loss)
         global_opt.step()
 
@@ -451,12 +455,16 @@ class SiteNet_DIM(pl.LightningModule):
         #Process Samples through input handler
         Site_Features = self.input_handler(Atomic_ID, [Site_Features, Oxidation_State])
         #Perform site deep infomax to obtain loss and embedding
-        if self.config["KL_loss"] > 0: #If the KL Loss isn't being trained it will inevitably cause NAN values, so it gets turned off
+        if self.config["KL_loss_local"] > 0: #If the KL Loss isn't being trained it will inevitably cause NAN values, so it gets turned off
             KL = True
         else:
             KL = False
         Local_Environment_Features,Local_Environment_DIM_loss,Local_Environment_KL_loss = self.Site_DIM(Site_Features, Interaction_Features, Attention_Mask, Batch_Mask,KL=KL)
         #Detach the local nevironment features and do independant deep infomax to convert local environment features to global features
+        if self.config["KL_loss_global"] > 0: #If the KL Loss isn't being trained it will inevitably cause NAN values, so it gets turned off
+            KL = True
+        else:
+            KL = False
         Global_Embedding_Features,Global_DIM_loss,Global_KL_loss = self.Global_DIM(Local_Environment_Features,Batch_Mask,KL=KL)
         #Try and perform shallow property prediction using the global representation as a sanity check
         Prediction = self.decoder(Global_Embedding_Features)

@@ -1,4 +1,4 @@
-label: "compact_dim_task_only"
+label: "compact_dim_major_minor"
 
 ###############
 #Features used#
@@ -35,10 +35,15 @@ Site_Features:
 #Training Hyperparameters#
 ###########################
 
-#Assign relative weights to the components
-DIM_loss: 0.0
-Prior_loss: 0.0
-KL_loss: 0.0
+#Assign relative weights to the global deep infomax loss
+DIM_loss_global: 1.0
+Prior_loss_global: 0.0
+KL_loss_global: 1.0
+
+#Assign relative weights to the local deep infomax loss
+DIM_loss_local: 1.0
+Prior_loss_local: 0.0
+KL_loss_local: 0.1
 
 #Dynamic beatch size is based on number of unique sites not number of crystals
 dynamic_batch: !!bool True
@@ -70,25 +75,25 @@ activation_function: mish
 set_norm: layer
 lin_norm: layer
 
-site_dim_per_head: 64
-site_bottleneck: 256
-site_dot_space: 512
-attention_dim_interaction: 64
+site_dim_per_head: 8
+site_bottleneck: 32
+site_dot_space: 32
+attention_dim_interaction: 8
 
 attention_heads: 4
 attention_blocks: 1
 distance_cutoff: -1 #No cut off, positive values add a cut-off measured in angstroms, made performance worse in testing
 attention_hidden_layers:
-- 256
+- 64
 k_softmax: -1 #No k softmax, available functionality but unused
 
 #Layers post attention blocks
 pre_pool_layers:
-- 512
-- 1024
+- 64
+- 128
 sym_func: mean
 post_pool_layers:
-- 256
 - 64
-global_dot_space: 512
+- 32
+global_dot_space: 64
 last_af_func: TReLU
