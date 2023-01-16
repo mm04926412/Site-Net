@@ -8,7 +8,8 @@ from lightning_module import (
     basic_callbacks,
     DIM_h5_Data_Module,
     SiteNet,
-    SiteNet_DIM
+    SiteNet_DIM,
+    SiteNet_DIM_regularisation
 )
 from lightning_module import basic_callbacks
 import yaml
@@ -50,7 +51,7 @@ def train_model(config, Dataset):
         #amp_level="O2",
         resume_from_checkpoint=resume_from_checkpoint,
     )
-    model = SiteNet_DIM(config)
+    model = SiteNet_DIM_regularisation(config)
     trainer.fit(model, Dataset)
 
 
@@ -92,7 +93,8 @@ if __name__ == "__main__":
             max_len=int(args.unit_cell_limit),
             ignore_errors=False,
             overwrite=bool(args.overwrite),
-            cpus=args.number_of_worker_processes
+            cpus=args.number_of_worker_processes,
+            multitaskmode_labels=config["labels"]
         )
         if int(args.pickle) == 2:
             dump(Dataset, open("db_pickle.pk", "wb"), compression=compression_alg)

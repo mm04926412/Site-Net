@@ -1,4 +1,4 @@
-label: "compact_dim_major_minor"
+label: "compact_dim_Adam"
 
 ###############
 #Features used#
@@ -10,8 +10,9 @@ Interaction_Features:
     polynomial_degree: 1
   name: distance_matrix
 
+
 site_feature_size: 8
-embedding_size: 115
+embedding_size: 0
 Site_Features:
 - Featurizer_KArgs:
     properties:
@@ -45,13 +46,10 @@ dynamic_batch: !!bool True
 Batch_Size: 1200
 
 #Pytorch lightning optimizer name and hyper parameters
-Learning_Rate: 0.0008125971481941902
+Learning_Rate: 0.0001
 Optimizer:
-  Kwargs:
-    amsgrad: true
-    eps: 1.0e-07
-    weight_decay: 0.0001
-  Name: AdamW
+  Kwargs: {}
+  Name: Adam
 
 #Allows arguments to be dynamically fed to the pytorch lightning trainer
 Trainer kwargs:
@@ -66,34 +64,33 @@ Max_Samples: 1000000000
 #Model Hyperparameters#
 #######################
 
-activation_function: mish
+activation_function: relu6
 set_norm: layer
 lin_norm: layer
 
-site_dim_per_head: 32
-site_bottleneck: 128
+site_dim_per_head: 64
+site_bottleneck: 12
 site_dot_hidden_layers:
 - 128
-site_dot_space: 128
-attention_dim_interaction: 32
+site_dot_space: 256
+attention_dim_interaction: 64
 
-attention_heads: 4
+attention_heads: 1
 attention_blocks: 1
 distance_cutoff: -1 #No cut off, positive values add a cut-off measured in angstroms, made performance worse in testing
 attention_hidden_layers:
-- 128
 - 128
 k_softmax: -1 #No k softmax, available functionality but unused
 
 #Layers post attention blocks
 pre_pool_layers:
-- 128
 - 256
+- 512
 sym_func: mean
 post_pool_layers:
-- 128
-- 128
+- 256
+- 256
 global_dot_hidden_layers:
-- 128
-global_dot_space: 128
+- 512
+global_dot_space: 1024
 last_af_func: TReLU

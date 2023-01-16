@@ -11,10 +11,6 @@ import argparse
 import sys
 from os.path import exists
 from tqdm import tqdm
-from zipfile import ZipFile
-from pymatgen.core import Structure
-import pandas as pd
-
 class OrthorhombicSupercellTransform(AbstractTransformation):
     """
     This transformation generates a combined scaled and shear of the provided unit cell to achieve a roughly
@@ -99,20 +95,10 @@ class process_structures():
         images = len(supercell)//len(struct)
         #Matbench band gap dataset does not contain disorder, but this code is general
         if not supercell.is_ordered:
-            try:
-                oxi_dec = AutoOxiStateDecorationTransformation()
-                supercell= oxi_dec.apply_transformation(supercell)
-                #discrete = DiscretizeOccupanciesTransformation(10)
-                #supercell = discrete.apply_transformation(supercell)
-                order_trans = OrderDisorderedStructureTransformation()
-                supercell = order_trans.apply_transformation(supercell)
-                prim_size = len(supercell)
-                images = 1
-                print("Succeed at ordering disordered cell")
-            except Exception as e:
-                print(e)
-                print("Failed to order disordered cell")
-                return None
+            oxi_dec = AutoOxiStateDecorationTransformation()
+            supercell= oxi_dec.apply_transformation(supercell)
+            order_trans = OrderDisorderedStructureTransformation()
+            supercell = order_trans.apply_transformation(supercell)
         return supercell,prim_size,images
 
 def generate_crystal_dictionary(struc_and_target):
@@ -164,7 +150,7 @@ def h5_dataset_from_structure_list(hdf5_file_name, structure_dictionary,cpus):
             group.create_dataset("prim_size", data=cdd[key]["prim_size"])
             group.create_dataset("images", data=cdd[key]["images"])
 
-def dataset_to_hdf5(inputs,outputs,h5_file_name,cpus,supercell,supercell_size):
+def dataset_to_hdf5(inputs,outputs,h5_file_name,cpus,fold_n,supercell,supercell_size):
     #Create tuples of crystal index names, pymatgen structures, and properties
     structure_list = [(i, j, k) for i, j, k in zip(inputs.index, inputs, outputs)]
     #Transform the structures into primitive unit cells, and then upscale if appropiate
@@ -173,19 +159,19 @@ def dataset_to_hdf5(inputs,outputs,h5_file_name,cpus,supercell,supercell_size):
     processed_structures = [
         i for i in tqdm(pool.imap(processor.process_structure, [i[1] for i in structure_list]))
     ]
-    print("STRUCTURES ARE NOW PROCESSED")
     pool.close()
     pool.join()
     pool.terminate()
     #Create tuple of processed structure, target proprety, size of primitive unit cell, and number of images
     processed_structures = [
         (processed_structures[i][0], structure_list[i][2],processed_structures[i][1],processed_structures[i][2])
-        for i in range(len(structure_list)) if processed_structures[i] != None
+        for i in range(len(structure_list))
     ]
     #Create a dictionary mapping each dataset index to the generated tuples
     structure_dict = {i[0]: j for i, j in tqdm(zip(structure_list, processed_structures))}
     #Initialize the h5 database with the pymatgen structures, the target, the primitive size, and the number of images
-    h5_dataset_from_structure_list(h5_file_name, structure_dict,cpus)
+    if not exists("Data/Matbench/" + h5_file_name + "_" + str(fold_n) + ".hdf5"):
+        h5_dataset_from_structure_list("Data/Matbench/" + h5_file_name + "_" + str(fold_n) + ".hdf5", structure_dict,cpus)
 
 if __name__ == "__main__":
     #Arguments for whether to generate primitive cells or supercells, and what size the supercells should be capped at
@@ -194,36 +180,25 @@ if __name__ == "__main__":
     parser.add_argument('--primitive', default=False, action='store_true')
     parser.add_argument("-s", "--supercell_size", default=100,type=int)
     parser.add_argument("-w", "--number_of_worker_processes",default = 1,type=int)
-    parser.add_argument("-c","--cif_zip",default=None,type=str)
-    parser.add_argument("-d","--data_csv",default=None,type=str)
-    parser.add_argument("-hd", "--h5_path",default=None,type=str)
     args = parser.parse_args()  
     if args.cubic_supercell:
-        h5_file_name = "matbench_mp_gap_cubic_" + str(args.supercell_size)
+        h5_file_name = "matbench_mp_e_form_cubic_" + str(args.supercell_size)
         supercell = True
         supercell_size = args.supercell_size
     elif args.primitive:
-        h5_file_name = "matbench_mp_gap_primitive"
+        h5_file_name = "matbench_mp_e_form_primitive"
         supercell = False
         supercell_size = None
     else:
         raise(Exception("Need to specify either --primitive or --cubic_supercell on commandline, with -s argument controlling supercell size"))
-    
-    def read_cif_try(file):
-        try:
-            return Structure.from_str(cif_zip.read(file).decode("utf-8"),"cif")
-        except:
-            print("FAILED TO READ CIF")
-            return None
-
-    with ZipFile(args.cif_zip,"r") as cif_zip:
-        tqdm.pandas()
-        data = pd.read_csv(args.data_csv)[:100]
-        data["structure"] = data["file"].progress_apply(read_cif_try)
-        data = data.dropna()
-        structures = pd.Series(data["structure"],data.index)
-        targets = pd.Series(data["target"],data.index)
-        dataset_to_hdf5(structures,targets,args.h5_path,args.number_of_worker_processes,supercell,supercell_size)
-
-
-    
+    task = MatbenchBenchmark().matbench_mp_e_form
+    task.load()
+    fold_n = 1
+    for fold in task.folds[:1]:
+        #Get the data from matbench
+        train_inputs, train_outputs = task.get_train_and_val_data(fold)
+        test_inputs,test_outputs = task.get_test_data(fold,include_target=True)
+        #Process the pymatgen structures and generate hdf5 database for training
+        dataset_to_hdf5(train_inputs,train_outputs,h5_file_name + "_train",args.number_of_worker_processes,fold_n,supercell,supercell_size)
+        dataset_to_hdf5(test_inputs,test_outputs,h5_file_name + "_test",args.number_of_worker_processes,fold_n,supercell,supercell_size)        
+        fold_n += 1

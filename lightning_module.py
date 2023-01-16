@@ -15,6 +15,8 @@ from torch import nn
 from torch_scatter import segment_csr
 from torch.utils.data import RandomSampler,Sampler
 from pymatgen.transformations.standard_transformations import *
+from itertools import cycle,islice
+from random import shuffle
 
 #Clamps negative predictions to zero without interfering with the gradients. "Transparent" ReLU
 class TReLU(torch.autograd.Function):
@@ -41,7 +43,7 @@ class TReLU(torch.autograd.Function):
 #Dictionaries allow programatic access of torch modules according to the config file
 optim_dict = torch.optim.__dict__
 site_feauturizers_dict = matminer.featurizers.site.__dict__
-af_dict = {"identity":lambda x:x,"relu":nn.functional.relu,"softplus":nn.functional.softplus,"TReLU":TReLU.apply}
+af_dict = {"identity":lambda x:x,"relu":nn.functional.relu,"softplus":nn.functional.softplus,"TReLU":TReLU.apply,"relu6":nn.ReLU6}
 
 
 #Constructs a batch dictionary from the list of property dictionaries returned by the h5 loader
@@ -318,7 +320,7 @@ class SiteNet_DIM(pl.LightningModule):
             self.Global_DIM = SiteNetDIMGlobal(**config)
             self.Site_Prior = nn.Sequential(nn.Linear(config["site_bottleneck"],256),nn.Mish(),nn.Linear(256,1))
             self.Global_Prior = nn.Sequential(nn.Linear(config["post_pool_layers"][-1],256),nn.Mish(),nn.Linear(256,1))
-            self.decoder = nn.Sequential(nn.Linear(self.config["post_pool_layers"][-1], 256),nn.Mish(),nn.Linear(256, 1))
+            self.decoder = nn.Sequential(nn.Linear(self.config["post_pool_layers"][-1], 1))
 
             self.config["pre_pool_layers_n"] = len(config["pre_pool_layers"])
             self.config["pre_pool_layers_size"] = sum(config["pre_pool_layers"]) / len(
@@ -339,7 +341,8 @@ class SiteNet_DIM(pl.LightningModule):
             print(atomic_number)
             print(Atomic_Embedding)
             raise (Exception)
-        return torch.cat([Atomic_Embedding, *features], dim=1)
+        #return torch.cat([Atomic_Embedding, *features], dim=1)
+        return torch.cat([*features], dim=1)
 
     #Inference mode, return the prediction
     def forward(self, b, batch_size=16):       
@@ -356,11 +359,16 @@ class SiteNet_DIM(pl.LightningModule):
             Oxidation_State = batch_dictionary["Oxidation_State"]
             Batch_Mask = batch_dictionary["Batch_Mask"]
             Site_Features = self.input_handler(Atomic_ID, [Site_Features, Oxidation_State])
-            Local_Environment_Features,Local_Environment_DIM_loss,Local_Environment_KL_loss = self.Site_DIM(Site_Features, Interaction_Features, Attention_Mask, Batch_Mask)
-            Global_Embedding_Features,Global_DIM_loss,Global_KL_loss = self.Global_DIM(Local_Environment_Features.detach().clone(),Batch_Mask)
+            Local_Environment_Features = self.Site_DIM.inference(Site_Features, Interaction_Features, Attention_Mask, Batch_Mask)
+            Global_Embedding_Features = self.Global_DIM.inference(Local_Environment_Features.detach().clone(),Batch_Mask)
             Encoding_list.append(Global_Embedding_Features)
         Encoding = torch.cat(Encoding_list, dim=0)
         return Encoding
+
+    @staticmethod
+    #This requires the batch size to be at least twice as large as the largest sample
+    def false_sample(x,dim):
+        return torch.roll(x,x.shape[dim]//2,dim)
 
     #Makes sure the model is in training mode, passes a batch through the model, then back propogates
     def training_step(self, batch_dictionary, batch_dictionary_idx):
@@ -381,6 +389,7 @@ class SiteNet_DIM(pl.LightningModule):
             KL = True
         else:
             KL = False
+
         Local_Environment_Features,Local_Environment_DIM_loss,Local_Environment_KL_loss = self.Site_DIM(Site_Features, Interaction_Features, Attention_Mask, Batch_Mask,KL=KL)
         Local_prior_samples = torch.rand_like(Local_Environment_Features)
         Local_prior_score = F.softplus(-self.Site_Prior(Local_prior_samples))
@@ -414,6 +423,16 @@ class SiteNet_DIM(pl.LightningModule):
             KL = True
         else:
             KL = False
+
+        #We create some synthetic local environments, the composition matches the target crystal but the distances are incorrect, and vice versa
+        # false_sites = self.false_sample(Site_Features,0)
+        # false_interactions = self.false_sample(Interaction_Features,0)
+        # false_attention_mask = self.false_sample(Attention_Mask,0)
+        # false_locals_composition = self.Site_DIM.inference(false_sites,Interaction_Features,Attention_Mask,Batch_Mask)
+        # false_locals_structure = self.Site_DIM.inference(Site_Features,false_interactions,false_attention_mask,Batch_Mask)
+        
+        #Perform global DIM
+        #Global_Embedding_Features,Global_DIM_loss,Global_KL_loss = self.Global_DIM(Local_Environment_Features.detach().clone(),false_locals_composition.detach().clone(),false_locals_structure.detach().clone(),Batch_Mask,KL=KL)
         Global_Embedding_Features,Global_DIM_loss,Global_KL_loss = self.Global_DIM(Local_Environment_Features.detach().clone(),Batch_Mask,KL=KL)
         Global_prior_samples = torch.rand_like(Global_Embedding_Features)
         Global_prior_score = F.softplus(-self.Global_Prior(Global_prior_samples))
@@ -430,6 +449,7 @@ class SiteNet_DIM(pl.LightningModule):
         Global_prior_loss_discrim = (Global_prior_score+Global_posterior_score).flatten().mean()
         self.manual_backward(Global_prior_loss_discrim)
         global_prior_opt.step()
+
 
         #Perform a step on predicting the band gap with the learnt global embedding
         task_opt.zero_grad()
@@ -465,7 +485,18 @@ class SiteNet_DIM(pl.LightningModule):
             KL = True
         else:
             KL = False
-        Global_Embedding_Features,Global_DIM_loss,Global_KL_loss = self.Global_DIM(Local_Environment_Features,Batch_Mask,KL=KL)
+
+        #We create some synthetic local environments, the composition matches the target crystal but the distances are incorrect, and vice versa
+        #false_sites = self.false_sample(Site_Features,0)
+        #false_interactions = self.false_sample(Interaction_Features,0)
+        #false_attention_mask = self.false_sample(Attention_Mask,0)
+        #false_locals_composition = self.Site_DIM.inference(false_sites,Interaction_Features,Attention_Mask,Batch_Mask)
+        #false_locals_structure = self.Site_DIM.inference(Site_Features,false_interactions,false_attention_mask,Batch_Mask)
+
+        #Get global DIM scores
+        #Global_Embedding_Features,Global_DIM_loss,Global_KL_loss = self.Global_DIM(Local_Environment_Features.detach().clone(),false_locals_composition.detach().clone(),false_locals_structure.detach().clone(),Batch_Mask,KL=KL)
+        Global_Embedding_Features,Global_DIM_loss,Global_KL_loss = self.Global_DIM(Local_Environment_Features.detach().clone(),Batch_Mask,KL=KL)
+
         #Try and perform shallow property prediction using the global representation as a sanity check
         Prediction = self.decoder(Global_Embedding_Features)
         MAE = torch.abs(Prediction.flatten() - batch_dictionary["target"].flatten()).mean()
@@ -487,7 +518,7 @@ class SiteNet_DIM(pl.LightningModule):
         #Task optimizer
         task_opt = optim_dict[Optimizer_Config["Name"]](
             self.decoder.parameters(),
-            lr=self.config["Learning_Rate"],
+            lr=0.001,
             **Optimizer_Config["Kwargs"],)
         #Local prior optimizer
         local_prior_opt = optim_dict[Optimizer_Config["Name"]](
@@ -515,6 +546,115 @@ class SiteNet_DIM(pl.LightningModule):
         self.log("avg_val_loss_local_KL",self.Local_Environment_KL_loss)
         self.log("avg_val_loss_global_KL",self.Global_KL_loss)
 
+class SiteNet_DIM_regularisation(SiteNet_DIM):
+    #Makes sure the model is in training mode, passes a batch through the model, then back propogates
+    def training_step(self, batch_dictionary, batch_dictionary_idx):
+        if batch_dictionary_idx==0:
+            self.Final_losses = []
+        self.train()
+        opt = self.optimizers()
+        Attention_Mask = batch_dictionary["Attention_Mask"]
+        Batch_Mask = batch_dictionary["Batch_Mask"]
+        Site_Features = batch_dictionary["Site_Feature_Tensor"]
+        Interaction_Features = batch_dictionary["Interaction_Feature_Tensor"]
+        Atomic_ID = batch_dictionary["Atomic_ID"]
+        Oxidation_State = batch_dictionary["Oxidation_State"]
+        #Process Samples through input handler
+        Site_Features = self.input_handler(Atomic_ID, [Site_Features, Oxidation_State])
+
+        #Perform a step on creating local environment representations while tricking the prior discriminator
+        opt.zero_grad()
+
+        if self.config["KL_loss_local"] > 0: #If the KL Loss isn't being trained it will inevitably cause NAN values, so it gets turned off
+            KL = True
+        else:
+            KL = False
+
+        Local_Environment_Features,Local_Environment_DIM_loss,Local_Environment_KL_loss = self.Site_DIM(Site_Features, Interaction_Features, Attention_Mask, Batch_Mask,KL=KL)
+
+        #Perform a step on creating global environment representations, loss depends on mutual information and being able to trick the prior discriminator
+        if self.config["KL_loss_global"] > 0: #If the KL Loss isn't being trained it will inevitably cause NAN values, so it gets turned off
+            KL = True
+        else:
+            KL = False
+
+        #We create some synthetic local environments, the composition matches the target crystal but the distances are incorrect, and vice versa
+        #false_sites = self.false_sample(Site_Features,0)
+        #false_interactions = self.false_sample(Interaction_Features,0)
+        #false_attention_mask = self.false_sample(Attention_Mask,0)
+        #false_locals_composition = self.Site_DIM.inference(false_sites,Interaction_Features,Attention_Mask,Batch_Mask)
+        #false_locals_structure = self.Site_DIM.inference(Site_Features,false_interactions,false_attention_mask,Batch_Mask)
+        
+        #Perform global DIM
+        #Global_Embedding_Features,Global_DIM_loss,Global_KL_loss = self.Global_DIM(Local_Environment_Features.detach().clone(),false_locals_composition.detach().clone(),false_locals_structure.detach().clone(),Batch_Mask,KL=KL)
+        Global_Embedding_Features,Global_DIM_loss,Global_KL_loss = self.Global_DIM(Local_Environment_Features.detach().clone(),Batch_Mask,KL=KL)
+
+        #Perform a step on predicting the band gap with the learnt global embedding
+        Local_Environment_Features = self.Site_DIM.inference(Site_Features, Interaction_Features, Attention_Mask, Batch_Mask)
+        Global_Embedding_Features = self.Global_DIM.inference(Local_Environment_Features,Batch_Mask)
+        Prediction = self.decoder(Global_Embedding_Features)
+        MAE = torch.abs(Prediction.flatten()[0] - batch_dictionary["target"].flatten()[0]) #Only the first sample in the dictionary is a "labeled" sample
+        self.Final_losses.append(MAE + self.config["DIM_loss_local"]*Local_Environment_DIM_loss + self.config["KL_loss_local"]*Local_Environment_KL_loss + self.config["DIM_loss_global"]*Global_DIM_loss + self.config["KL_loss_global"]*Global_KL_loss)
+        
+        if (batch_dictionary_idx + 1) % self.config["grad_accumulate"] == 0:
+            Final_loss = torch.stack(self.Final_losses).flatten().mean()
+            self.manual_backward(Final_loss)
+            opt.step()
+            self.Final_losses = []
+        #"Local_Environment_KL_loss":Local_Environment_KL_loss,
+        #"Global_KL_loss":Global_KL_loss,
+
+        self.log_dict({"task_loss":MAE,"Local_Environment_DIM_Loss":Local_Environment_DIM_loss,
+        "Global_DIM_loss":Global_DIM_loss,"Local_KL_loss":Local_Environment_KL_loss,"Global_KL_loss":Global_KL_loss},prog_bar=True)
+    #Makes sure the model is in eval mode then passes a validation sample through the model
+    def validation_step(self, batch_dictionary, batch_dictionary_idx):
+        self.eval()
+        Attention_Mask = batch_dictionary["Attention_Mask"]
+        Batch_Mask = batch_dictionary["Batch_Mask"]
+        Site_Features = batch_dictionary["Site_Feature_Tensor"]
+        Interaction_Features = batch_dictionary["Interaction_Feature_Tensor"]
+        Atomic_ID = batch_dictionary["Atomic_ID"]
+        Oxidation_State = batch_dictionary["Oxidation_State"]
+        #Process Samples through input handler
+        Site_Features = self.input_handler(Atomic_ID, [Site_Features, Oxidation_State])
+        #Perform site deep infomax to obtain loss and embedding
+        if self.config["KL_loss_local"] > 0: #If the KL Loss isn't being trained it will inevitably cause NAN values, so it gets turned off
+            KL = True
+        else:
+            KL = False
+        Local_Environment_Features,Local_Environment_DIM_loss,Local_Environment_KL_loss = self.Site_DIM(Site_Features, Interaction_Features, Attention_Mask, Batch_Mask,KL=KL)
+        #Detach the local nevironment features and do independant deep infomax to convert local environment features to global features
+        if self.config["KL_loss_global"] > 0: #If the KL Loss isn't being trained it will inevitably cause NAN values, so it gets turned off
+            KL = True
+        else:
+            KL = False
+
+        #We create some synthetic local environments, the composition matches the target crystal but the distances are incorrect, and vice versa
+        # false_sites = self.false_sample(Site_Features,0)
+        # false_interactions = self.false_sample(Interaction_Features,0)
+        # false_attention_mask = self.false_sample(Attention_Mask,0)
+        # false_locals_composition = self.Site_DIM.inference(false_sites,Interaction_Features,Attention_Mask,Batch_Mask)
+        # false_locals_structure = self.Site_DIM.inference(Site_Features,false_interactions,false_attention_mask,Batch_Mask)
+
+        #Get global DIM scores
+        #Global_Embedding_Features,Global_DIM_loss,Global_KL_loss = self.Global_DIM(Local_Environment_Features.detach().clone(),false_locals_composition.detach().clone(),false_locals_structure.detach().clone(),Batch_Mask,KL=KL)
+        Global_Embedding_Features,Global_DIM_loss,Global_KL_loss = self.Global_DIM(Local_Environment_Features.detach().clone(),Batch_Mask,KL=KL)
+        #Try and perform shallow property prediction using the global representation as a sanity check
+        Prediction = self.decoder(Global_Embedding_Features)
+        MAE = torch.abs(Prediction.flatten() - batch_dictionary["target"].flatten()).mean()
+        return [MAE,Local_Environment_DIM_loss,Local_Environment_KL_loss,Global_DIM_loss,Global_KL_loss]
+
+    #Configures the optimizer from the config
+    def configure_optimizers(self):
+        Optimizer_Config = self.config["Optimizer"]
+        #Local DIM optimizer
+        opt = optim_dict[Optimizer_Config["Name"]](
+            self.Site_DIM.parameters(),
+            lr=self.config["Learning_Rate"],
+            **Optimizer_Config["Kwargs"],)
+
+        return opt
+
 class basic_callbacks(pl.Callback):
     def __init__(self,*pargs,filename = "current_model",**kwargs):
         super().__init__(*pargs,**kwargs)
@@ -535,95 +675,6 @@ class basic_callbacks(pl.Callback):
     def on_validation_epoch_end(self, trainer, pl_module):
         trainer.save_checkpoint(self.filename)
 
-
-############ DATA MODULE ###############
-
-class DIM_h5_Data_Module(pl.LightningDataModule):
-    def __init__(
-        self,
-        config,
-        overwrite=False,
-        ignore_errors=False,
-        chunk_size=cpu_count() ** 2 * 16,
-        max_len=100,
-        Dataset=None,
-    ):
-
-        super().__init__()
-        self.batch_size = config["Batch_Size"]
-        #In dynamic batching, the number of unique sites is the limit on the batch, not the number of crystals, the number of crystals varies between batches
-        self.dynamic_batch = config["dynamic_batch"]
-        self.Site_Features = config["Site_Features"]
-        self.Interaction_Features = config["Interaction_Features"]
-        self.h5_file = config["h5_file"]
-        self.overwrite = overwrite
-        self.ignore_errors = ignore_errors
-        self.limit = config["Max_Samples"]
-        self.chunk_size = chunk_size
-        self.max_len = max_len
-        if Dataset is None:
-            self.Dataset = torch_h5_cached_loader(
-                self.Site_Features,
-                self.Interaction_Features,
-                self.h5_file,
-                max_len=self.max_len,
-                ignore_errors=self.ignore_errors,
-                overwrite=self.overwrite,
-                limit=self.limit,
-            )
-        else:
-            self.Dataset = Dataset
-
-    def prepare_data(self):
-        self.Dataset_Train, self.Dataset_Val = random_split(
-            self.Dataset,
-            [len(self.Dataset) - len(self.Dataset) // 20, len(self.Dataset) // 20],
-            generator=torch.Generator().manual_seed(42)
-        )
-
-    def train_dataloader(self):
-        if self.dynamic_batch:
-            return DataLoader(
-                self.Dataset_Train,
-                collate_fn=collate_fn,
-                batch_sampler=SiteNet_batch_sampler(RandomSampler(self.Dataset_Train),self.batch_size),
-                pin_memory=False,
-                num_workers=cpu_count()-1,
-                prefetch_factor=8,
-                persistent_workers=True
-            )
-        else:
-            return DataLoader(
-                self.Dataset_Train,
-                batch_size=self.batch_size,
-                collate_fn=collate_fn,
-                pin_memory=False,
-                num_workers=cpu_count()-1,
-                prefetch_factor=8,
-                persistent_workers=True
-            )
-
-    def val_dataloader(self):
-        if self.dynamic_batch:
-            return DataLoader(
-                self.Dataset_Val,
-                collate_fn=collate_fn,
-                batch_sampler=SiteNet_batch_sampler(RandomSampler(self.Dataset_Val),self.batch_size),
-                pin_memory=False,
-                num_workers=cpu_count()-1,
-                prefetch_factor=8,
-                persistent_workers=True
-            )
-        else:
-            return DataLoader(
-                self.Dataset_Val,
-                batch_size=self.batch_size,
-                collate_fn=collate_fn,
-                pin_memory=False,
-                num_workers=cpu_count()-1,
-                prefetch_factor=8,
-                persistent_workers=True
-            )
 ############ DATA MODULE ###############
 
 class DIM_h5_Data_Module(pl.LightningDataModule):
@@ -636,6 +687,7 @@ class DIM_h5_Data_Module(pl.LightningDataModule):
         Dataset=None,
         cpus = 1,
         chunk_size = 32,
+        multitaskmode_labels=False,
         **kwargs
     ):
 
@@ -651,6 +703,7 @@ class DIM_h5_Data_Module(pl.LightningDataModule):
         self.limit = config["Max_Samples"]
         self.max_len = max_len
         self.cpus=cpus
+        self.multitaskmode_labels = multitaskmode_labels
         if Dataset is None:
             self.Dataset = torch_h5_cached_loader(
                 self.Site_Features,
@@ -675,15 +728,26 @@ class DIM_h5_Data_Module(pl.LightningDataModule):
 
     def train_dataloader(self):
         if self.dynamic_batch:
-            return DataLoader(
-                self.Dataset_Train,
-                collate_fn=collate_fn,
-                batch_sampler=SiteNet_batch_sampler(RandomSampler(self.Dataset_Train),self.batch_size),
-                pin_memory=False,
-                num_workers=self.cpus,
-                prefetch_factor=8,
-                persistent_workers=True
-            )
+            if self.multitaskmode_labels:
+                return DataLoader(
+                    self.Dataset_Train,
+                    collate_fn=collate_fn,
+                    batch_sampler=Multitask_batch_sampler(RandomSampler(self.Dataset_Train),self.batch_size,N_labels=self.multitaskmode_labels),
+                    pin_memory=False,
+                    num_workers=self.cpus,
+                    prefetch_factor=8,
+                    persistent_workers=True
+                )
+            else:
+                return DataLoader(
+                    self.Dataset_Train,
+                    collate_fn=collate_fn,
+                    batch_sampler=SiteNet_batch_sampler(RandomSampler(self.Dataset_Train),self.batch_size),
+                    pin_memory=False,
+                    num_workers=self.cpus,
+                    prefetch_factor=8,
+                    persistent_workers=True
+                )
         else:
             return DataLoader(
                 self.Dataset_Train,
@@ -720,8 +784,6 @@ class SiteNet_batch_sampler(Sampler):
     def __init__(self, sampler, batch_size):
         self.sampler = sampler
         self.batch_size = batch_size
-        print("Initializing Random Sampler")
-        self.prim_sizes = {idx:self.sampler.data_source[idx]["prim_size"] for idx in tqdm(sampler)}
     def __iter__(self):
             #The VRAM required by the model in each batch is proportional to the number of unique atomic sites, or the length of the i axis
             #Keep extending the batch with more crystals until doing so again brings us over the batch size
@@ -733,13 +795,13 @@ class SiteNet_batch_sampler(Sampler):
             while True:
                 try:
                     #Check if this crystal brings us above the batch limit
-                    if self.prim_sizes[idx] + size > self.batch_size:
+                    if self.sampler.data_source[idx]["prim_size"] + size > self.batch_size:
                         yield batch
-                        size = self.prim_sizes[idx]
+                        size = self.sampler.data_source[idx]["prim_size"]
                         batch = [idx]
                         idx = next(sampler_iter)
                     else:
-                        size+= self.prim_sizes[idx]
+                        size+= self.sampler.data_source[idx]["prim_size"]
                         batch.append(idx)
                         idx = next(sampler_iter)
                 except StopIteration:
@@ -748,3 +810,39 @@ class SiteNet_batch_sampler(Sampler):
                         yield batch
                     #break to let lightning know the epoch is over
                     break
+
+class Multitask_batch_sampler(Sampler):
+    def __init__(self, sampler, batch_size,N_labels = 1000):
+        self.sampler = sampler
+        self.batch_size = batch_size
+        self.chosen_labels = list(islice(iter(self.sampler),N_labels))
+    def __iter__(self):
+            #The VRAM required by the model in each batch is proportional to the number of unique atomic sites, or the length of the i axis
+            #Keep extending the batch with more crystals until doing so again brings us over the batch size
+            #If extending the batch would bring it over the max batch size, yield the current batch and seed a new one
+            sampler_iter = cycle(filter(lambda x: x not in self.chosen_labels,iter(self.sampler)))
+            shuffle(self.chosen_labels)
+            chosen_labels = iter(self.chosen_labels)
+            labels_idx = next(chosen_labels)
+            idx = next(sampler_iter)
+            batch = [labels_idx]
+            size = self.sampler.data_source[labels_idx]["prim_size"]
+            while True:
+                try:
+                    if self.sampler.data_source[idx]["prim_size"] + size > self.batch_size:
+                        yield batch
+                        labels_idx = next(chosen_labels)
+                        size = self.sampler.data_source[labels_idx]["prim_size"]
+                        batch = [labels_idx]
+                    else:
+                        size+= self.sampler.data_source[idx]["prim_size"]
+                        batch.append(idx)
+                        idx = next(sampler_iter)
+                except StopIteration:
+                    #Don't throw away the last batch if it isnt empty
+                    if batch != []:
+                        yield batch
+                    #break to let lightning know the epoch is over
+                    break
+    def __len__(self):
+        return len(self.chosen_labels)

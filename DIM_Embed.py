@@ -80,7 +80,7 @@ if __name__ == "__main__":
     model = SiteNet_DIM(config)
     results = model.forward(Dataset.Dataset,batch_size=128)
     results = pd.DataFrame(results.detach().numpy())
-    tsne =np.transpose(TSNE().fit_transform(results))
+    tsne =np.transpose(TSNE(init="pca",perplexity=50,learning_rate="auto").fit_transform(results))
     results.to_csv("embeddings_initial.csv")
 
     model = RandomForestRegressor()
@@ -109,6 +109,8 @@ if __name__ == "__main__":
 
     plt.figure()
     plt.scatter(tsne[0],tsne[1],c=y,s=0.7)
+    plt.axis("off")
+    plt.colorbar()
     plt.savefig("tsne_initial.png")
 
     print(Dataset.Dataset[0].keys())
@@ -119,7 +121,7 @@ if __name__ == "__main__":
     model.load_state_dict(torch.load(model_name,map_location=torch.device("cpu"))["state_dict"], strict=False)
     results = model.forward(Dataset.Dataset,batch_size=128)
     results = pd.DataFrame(results.detach().numpy())
-    tsne =np.transpose(TSNE().fit_transform(results))
+    tsne =np.transpose(TSNE(init="pca",perplexity=50,learning_rate="auto").fit_transform(results))
     results.to_csv("embeddings.csv")
 
     model = RandomForestRegressor()
@@ -148,6 +150,8 @@ if __name__ == "__main__":
 
     plt.figure()
     plt.scatter(tsne[0],tsne[1],c=y,s=0.7)
+    plt.axis("off")
+    plt.colorbar()
     plt.savefig("tsne.png")
 
     print(Dataset.Dataset[0].keys())
