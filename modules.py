@@ -119,7 +119,7 @@ af_dict = {"relu": nn.ReLU, "mish": mish,"sigmoid":nn.Sigmoid,"none":FakeModule,
 
 class SiteNetAttentionBlock(nn.Module):
     def __init__(
-        self, site_dim, interaction_dim, heads=4, af="relu", set_norm="batch",tdot=False,k_softmax=-1,attention_hidden_layers=[256,256]
+        self, site_dim, interaction_dim, heads=4, af="relu", set_norm="batch",tdot=False,k_softmax=-1,attention_hidden_layers=[256,256], site_bottleneck = 64
     ):
         super().__init__()
         #Number of attention heads
@@ -141,7 +141,7 @@ class SiteNetAttentionBlock(nn.Module):
         #Maps the bond features to the attention features (g^A)
         self.ije_to_attention_features = pairwise_seq_af_norm([(site_dim*2 + interaction_dim) * heads, site_dim],af_dict[af],pairwise_norm_dict[set_norm])
         #Linear layer on new site features prior to the next attention block / pooling
-        self.global_linear = set_seq_af_norm([site_dim * heads, site_dim * heads],af_dict[af],set_norm_dict[set_norm])
+        self.global_linear = set_seq_af_norm([site_dim * heads, site_bottleneck],af_dict["none"],set_norm_dict["none"])
     @staticmethod
     def head_reshape(x,heads):
         return x.reshape(*x.shape[:-1],x.shape[-1]//heads,heads)
@@ -191,6 +191,7 @@ class SiteNetEncoder(nn.Module):
         attention_hidden_layers=[256,256],
         k_softmax=-1,
         distance_cutoff=-1,
+
         **kwargs,
     ):
         super().__init__()

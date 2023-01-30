@@ -17,7 +17,7 @@ from torch.utils.data import RandomSampler,Sampler
 from pymatgen.transformations.standard_transformations import *
 from itertools import cycle,islice
 from random import shuffle
-
+from matminer.featurizers.composition.element import ElementFraction
 #Clamps negative predictions to zero without interfering with the gradients. "Transparent" ReLU
 class TReLU(torch.autograd.Function):
     """
@@ -31,6 +31,7 @@ class TReLU(torch.autograd.Function):
         """
         f(x) is equivalent to relu
         """
+        
         return input.clamp(min=0)
 
     @staticmethod
@@ -43,7 +44,7 @@ class TReLU(torch.autograd.Function):
 #Dictionaries allow programatic access of torch modules according to the config file
 optim_dict = torch.optim.__dict__
 site_feauturizers_dict = matminer.featurizers.site.__dict__
-af_dict = {"identity":lambda x:x,"relu":nn.functional.relu,"softplus":nn.functional.softplus,"TReLU":TReLU.apply,"relu6":nn.ReLU6}
+af_dict = {"identity":lambda x:x,"relu":nn.functional.relu,"softplus":nn.functional.softplus,"TReLU":TReLU.apply,"relu6":nn.ReLU6}   
 
 
 #Constructs a batch dictionary from the list of property dictionaries returned by the h5 loader
@@ -61,6 +62,12 @@ def collate_fn(batch, inference=False):
         batch = [process_func(i) for i in batch]
         batch = [torch.as_tensor(np.array(i), dtype=dtype) for i in batch]
         return batch
+
+    def composition_tensor_from_structure(struct):
+        composition = struct.composition
+        frac_vector = ElementFraction().featurize(composition)
+        return torch.as_tensor(np.array(frac_vector),dtype=torch.float)
+ 
 
     # 2 dimensional stacking for the adjaceny matricies
     def adjacency_stack(batch):
@@ -89,6 +96,7 @@ def collate_fn(batch, inference=False):
     site_features = initialize_tensors(batch, "Site_Feature_Tensor", torch.float)
     interaction_features = initialize_tensors(batch, "Interaction_Feature_Tensor", torch.float)
     Oxidation_State = initialize_tensors(batch, "Oxidation_State", torch.float)
+    composition = [composition_tensor_from_structure(i["structure"]) for i in batch]
     # Pack Crystal Features
     batching_mask_COO = []
     batching_mask_CSR = []
@@ -137,7 +145,8 @@ def collate_fn(batch, inference=False):
     batch_dict["Oxidation_State"] = torch.cat(Oxidation_State,0)
     batch_dict["target"] = torch.as_tensor(np.array([(i["target"]) for i in batch]))
     batch_dict["Batch_Mask"] = {"COO":batching_mask_COO,"CSR":batching_mask_CSR,"attention_i":batching_mask_attention_i,"attention_j":batching_mask_attention_j}
-    if inference:
+    batch_dict["Composition"] = torch.stack(composition,0)
+    if inference: #If the batch dictionary contains things that are not tensors while training it breaks pytorch lightning
         batch_dict["Structure"] = [i["structure"] for i in batch]
     return batch_dict
 
@@ -172,17 +181,20 @@ class SiteNet(pl.LightningModule):
             self.save_hyperparameters(self.config)
     #Constructs the site features from the individual pieces, including the learnt atomic embeddings if enabled
     def input_handler(self, atomic_number, features, Learnt_Atomic_Embedding=True):
-        if Learnt_Atomic_Embedding:
-            Atomic_Embedding = self.Elemental_Embeddings(atomic_number)
+        if self.config["embedding_size"] > 0:
+            if Learnt_Atomic_Embedding:
+                Atomic_Embedding = self.Elemental_Embeddings(atomic_number)
+            else:
+                Atomic_Embedding = F.one_hot(atomic_number, num_classes=115).float()
+            for i in features:
+                assert not torch.isnan(i).any()
+            if torch.isnan(Atomic_Embedding).any():
+                print(atomic_number)
+                print(Atomic_Embedding)
+                raise (Exception)
+            return torch.cat([Atomic_Embedding, *features], dim=1)
         else:
-            Atomic_Embedding = F.one_hot(atomic_number, num_classes=115).float()
-        for i in features:
-            assert not torch.isnan(i).any()
-        if torch.isnan(Atomic_Embedding).any():
-            print(atomic_number)
-            print(Atomic_Embedding)
-            raise (Exception)
-        return torch.cat([Atomic_Embedding, *features], dim=1)
+            return torch.cat(features, dim=1)
 
     #Inference mode, return the prediction
     def forward(self, b, batch_size=16,return_truth = False):
@@ -320,6 +332,7 @@ class SiteNet_DIM(pl.LightningModule):
             self.Global_DIM = SiteNetDIMGlobal(**config)
             self.Site_Prior = nn.Sequential(nn.Linear(config["site_bottleneck"],256),nn.Mish(),nn.Linear(256,1))
             self.Global_Prior = nn.Sequential(nn.Linear(config["post_pool_layers"][-1],256),nn.Mish(),nn.Linear(256,1))
+            self.Composition_Decoder = nn.Sequential(nn.Linear(config["post_pool_layers"][-1],256),nn.Mish(),nn.Linear(256,103))
             self.decoder = nn.Sequential(nn.Linear(self.config["post_pool_layers"][-1], 1))
 
             self.config["pre_pool_layers_n"] = len(config["pre_pool_layers"])
@@ -438,7 +451,10 @@ class SiteNet_DIM(pl.LightningModule):
         Global_prior_score = F.softplus(-self.Global_Prior(Global_prior_samples))
         Global_posterior_score = F.softplus(self.Global_Prior(Global_Embedding_Features))
         Global_prior_loss = (Global_prior_score+Global_posterior_score).flatten().mean()
-        Global_Loss = self.config["DIM_loss_global"]*Global_DIM_loss + self.config["Prior_loss_global"]*Global_prior_loss + self.config["KL_loss_global"]*Global_KL_loss
+        Recon_Composition = self.Composition_Decoder(Global_Embedding_Features).clamp(0)
+        Recon_Composition = Recon_Composition/(torch.sum(Recon_Composition,dim=1).unsqueeze(1).repeat(1,103)+10e-6)
+        Composition_Loss = (-torch.sum(torch.min(Recon_Composition,batch_dictionary["Composition"]),1)).flatten().mean() + 1 #Half taxi cab distance for ternaries
+        Global_Loss = self.config["DIM_loss_global"]*Global_DIM_loss + self.config["Prior_loss_global"]*Global_prior_loss + self.config["KL_loss_global"]*Global_KL_loss + self.config["Composition_Loss"]*Composition_Loss
         self.manual_backward(Global_Loss)
         global_opt.step()
 
@@ -462,7 +478,7 @@ class SiteNet_DIM(pl.LightningModule):
         #"Global_KL_loss":Global_KL_loss,
 
         self.log_dict({"task_loss":MAE,"Local_Environment_DIM_Loss":Local_Environment_DIM_loss,
-        "Global_DIM_loss":Global_DIM_loss,"Local_prior_loss":Local_prior_loss,"Global_prior_loss":Global_prior_loss,"Local_KL_loss":Local_Environment_KL_loss,"Global_KL_loss":Global_KL_loss},prog_bar=True)
+        "Global_DIM_loss":Global_DIM_loss,"Local_prior_loss":Local_prior_loss,"Global_prior_loss":Global_prior_loss,"Local_KL_loss":Local_Environment_KL_loss,"Global_KL_loss":Global_KL_loss,"Comp_Loss":Composition_Loss},prog_bar=True)
     #Makes sure the model is in eval mode then passes a validation sample through the model
     def validation_step(self, batch_dictionary, batch_dictionary_idx):
         self.eval()
@@ -496,11 +512,15 @@ class SiteNet_DIM(pl.LightningModule):
         #Get global DIM scores
         #Global_Embedding_Features,Global_DIM_loss,Global_KL_loss = self.Global_DIM(Local_Environment_Features.detach().clone(),false_locals_composition.detach().clone(),false_locals_structure.detach().clone(),Batch_Mask,KL=KL)
         Global_Embedding_Features,Global_DIM_loss,Global_KL_loss = self.Global_DIM(Local_Environment_Features.detach().clone(),Batch_Mask,KL=KL)
+        Recon_Composition = self.Composition_Decoder(Global_Embedding_Features).clamp(0)
+        Recon_Composition = Recon_Composition/(torch.sum(Recon_Composition,dim=1).unsqueeze(1).repeat(1,103)+10e-6)
+        Composition_Loss = (-torch.sum(torch.min(Recon_Composition,batch_dictionary["Composition"]),1)).flatten().mean() + 1#Half taxi cab distance for ternaries
+        #Composition_Loss = torch.absolute(Recon_Composition-batch_dictionary["Composition"]).flatten().mean() #taxi cab distance for ternaries
 
         #Try and perform shallow property prediction using the global representation as a sanity check
         Prediction = self.decoder(Global_Embedding_Features)
         MAE = torch.abs(Prediction.flatten() - batch_dictionary["target"].flatten()).mean()
-        return [MAE,Local_Environment_DIM_loss,Local_Environment_KL_loss,Global_DIM_loss,Global_KL_loss]
+        return [MAE,Local_Environment_DIM_loss,Local_Environment_KL_loss,Global_DIM_loss,Global_KL_loss,Composition_Loss]
 
     #Configures the optimizer from the config
     def configure_optimizers(self):
@@ -540,11 +560,13 @@ class SiteNet_DIM(pl.LightningModule):
         self.Local_Environment_KL_loss = torch.stack([i[2] for i in outputs]).mean()
         self.Global_DIM_loss = torch.stack([i[3] for i in outputs]).mean()
         self.Global_KL_loss = torch.stack([i[4] for i in outputs]).mean()
+        self.Composition_Loss = torch.stack([i[5] for i in outputs]).mean()
         self.log("avg_val_loss_task", self.avg_loss_task)
         self.log("avg_val_loss_local_DIM",self.Local_Environment_DIM_loss)
         self.log("avg_val_loss_global_DIM",self.Global_DIM_loss)
         self.log("avg_val_loss_local_KL",self.Local_Environment_KL_loss)
         self.log("avg_val_loss_global_KL",self.Global_KL_loss)
+        self.log("avg_val_Composition_Loss",self.Composition_Loss)
 
 class SiteNet_DIM_regularisation(SiteNet_DIM):
     #Makes sure the model is in training mode, passes a batch through the model, then back propogates

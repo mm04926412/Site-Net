@@ -1,4 +1,4 @@
-label: "compact_dim_Adam"
+label: "compact_dim_larger_site_small"
 
 ###############
 #Features used#
@@ -32,14 +32,15 @@ Site_Features:
 ###########################
 
 #Assign relative weights to the global deep infomax loss
-DIM_loss_global: 1.0
+DIM_loss_global: 0.0
 Prior_loss_global: 0.0
-KL_loss_global: 0.1
+KL_loss_global: 0.0
+Composition_Loss: 0.0
 
 #Assign relative weights to the local deep infomax loss
-DIM_loss_local: 1.0
+DIM_loss_local: 0.0
 Prior_loss_local: 0.0
-KL_loss_local: 0.1
+KL_loss_local: 0.0
 
 #Dynamic beatch size is based on number of unique sites not number of crystals
 dynamic_batch: !!bool True
@@ -48,8 +49,11 @@ Batch_Size: 1200
 #Pytorch lightning optimizer name and hyper parameters
 Learning_Rate: 0.0001
 Optimizer:
-  Kwargs: {}
-  Name: Adam
+  Kwargs:
+    amsgrad: true
+    eps: 1.0e-07
+    weight_decay: 0.0001
+  Name: AdamW
 
 #Allows arguments to be dynamically fed to the pytorch lightning trainer
 Trainer kwargs:
@@ -58,7 +62,7 @@ Trainer kwargs:
   max_epochs: 100000000
 
 #Limit on dataset size, arbitrarily high number to disable
-Max_Samples: 1000000000
+Max_Samples: 1000
 
 #######################
 #Model Hyperparameters#
@@ -69,7 +73,7 @@ set_norm: layer
 lin_norm: layer
 
 site_dim_per_head: 64
-site_bottleneck: 12
+site_bottleneck: 32
 site_dot_hidden_layers:
 - 128
 site_dot_space: 256

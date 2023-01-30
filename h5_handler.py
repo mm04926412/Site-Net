@@ -656,12 +656,6 @@ def JIT_h5_load(
 
 
 class torch_h5_cached_loader(Dataset):
-    @staticmethod
-    def rand_false(idx, it_length):
-        false_idx = random.randrange(it_length - 1)
-        false_idx = false_idx + 1 if false_idx >= idx else false_idx
-        return false_idx
-
     def __init__(
         self,
         Site_Features,
@@ -691,17 +685,7 @@ class torch_h5_cached_loader(Dataset):
     def __getitem__(self, idx):
         if isinstance(idx, slice):
             return [self[i] for i in list(range(idx.start, idx.stop))]
-        Requested_Structure = loads(self.result[idx], comp_alg)
-        False_Structure = loads(
-            self.result[self.rand_false(idx, len(self.result))], comp_alg
-        )
-        Requested_Structure["False_Sample"] = {
-            "Site_Feature_Tensor": False_Structure["Site_Feature_Tensor"],
-            "Atomic_ID": False_Structure["Atomic_ID"],
-            "Oxidation_State": False_Structure["Oxidation_State"],
-            "Interaction_Feature_Tensor": False_Structure["Interaction_Feature_Tensor"],
-        }
-        return Requested_Structure
+        return loads(self.result[idx], comp_alg)
 
     def __len__(self):
         return len(self.result)
