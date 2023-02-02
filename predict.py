@@ -281,6 +281,7 @@ if __name__ == "__main__":
     parser.add_argument("-n", "--limit", default=None,type=int)
     parser.add_argument("-m", "--model_name", default=None,type=str)
     parser.add_argument("-w", "--number_of_worker_processes", default=1,type=int)
+    parser.add_argument("-u", "--cell_size_limit", default = None )
     args = parser.parse_args()
     torch.set_num_threads(args.number_of_worker_processes)
     try:
@@ -304,9 +305,11 @@ if __name__ == "__main__":
     config["Batch_Size"] = 128
     model = lightning_module_with_interaction_returns(config)
     model.load_state_dict(torch.load(model_name,map_location=torch.device("cpu"))["state_dict"], strict=False)
+    if args.cell_size_limit != None:
+        args.cell_size_limit = int(args.cell_size_limit)
     Dataset = DIM_h5_Data_Module(
         config,
-        max_len=None,
+        max_len=args.cell_size_limit,
         ignore_errors=True,
         overwrite=False,
         cpus=args.number_of_worker_processes,

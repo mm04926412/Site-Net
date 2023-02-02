@@ -78,6 +78,7 @@ if __name__ == "__main__":
             "Config not found or unprovided, a configuration JSON path is REQUIRED to run"
         )
     config["h5_file"] = args.fold_name
+    config["label"] = config["label"] + "_DIM"
     if bool(args.debug) == True:
         config["Max_Samples"] = 1000
     if int(args.pickle) == 1:

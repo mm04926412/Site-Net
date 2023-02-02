@@ -181,20 +181,7 @@ class SiteNet(pl.LightningModule):
             self.save_hyperparameters(self.config)
     #Constructs the site features from the individual pieces, including the learnt atomic embeddings if enabled
     def input_handler(self, atomic_number, features, Learnt_Atomic_Embedding=True):
-        if self.config["embedding_size"] > 0:
-            if Learnt_Atomic_Embedding:
-                Atomic_Embedding = self.Elemental_Embeddings(atomic_number)
-            else:
-                Atomic_Embedding = F.one_hot(atomic_number, num_classes=115).float()
-            for i in features:
-                assert not torch.isnan(i).any()
-            if torch.isnan(Atomic_Embedding).any():
-                print(atomic_number)
-                print(Atomic_Embedding)
-                raise (Exception)
-            return torch.cat([Atomic_Embedding, *features], dim=1)
-        else:
-            return torch.cat(features, dim=1)
+        return torch.cat(features, dim=1)
 
     #Inference mode, return the prediction
     def forward(self, b, batch_size=16,return_truth = False):
@@ -347,15 +334,7 @@ class SiteNet_DIM(pl.LightningModule):
             self.automatic_optimization=False
     #Constructs the site features from the individual pieces, including the learnt atomic embeddings if enabled
     def input_handler(self, atomic_number, features):
-        Atomic_Embedding = F.one_hot(atomic_number, num_classes=115).float()
-        for i in features:
-            assert not torch.isnan(i).any()
-        if torch.isnan(Atomic_Embedding).any():
-            print(atomic_number)
-            print(Atomic_Embedding)
-            raise (Exception)
-        #return torch.cat([Atomic_Embedding, *features], dim=1)
-        return torch.cat([*features], dim=1)
+        return torch.cat(features, dim=1)
 
     #Inference mode, return the prediction
     def forward(self, b, batch_size=16):       

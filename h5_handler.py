@@ -18,6 +18,7 @@ import multiprocessing
 import multiprocessing.pool as mpp
 from multiprocessing import cpu_count,Process, Pool, set_start_method
 from random import shuffle, seed
+import random
 seed(42)
 import yaml
 from pytorch_lightning.callbacks import *
@@ -603,8 +604,8 @@ def JIT_h5_load(
     print("h5 file name is " + h5_file_name)
     key_data = h5py.File(h5_file_name, "r")
     keys = list(key_data.keys())
-    shuffle(keys)
-    keys = keys[:limit]
+    random.Random("FIXED_SEED").shuffle(keys) #Destroys any ordering present in the original dataset, in a consistent way
+    keys = keys[:limit] #The above Ensures this is a uniform random sample
     key_data.close()
 
     def divide_chunks(l, n):

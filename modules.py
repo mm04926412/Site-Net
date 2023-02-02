@@ -139,7 +139,7 @@ class SiteNetAttentionBlock(nn.Module):
         #Maps the bond feautres to the new interaction features (g^I)
         self.ije_to_Interaction_Features = pairwise_seq_af_norm([(site_dim * 2 + interaction_dim) * heads, interaction_dim * heads],af_dict[af],pairwise_norm_dict[set_norm])
         #Maps the bond features to the attention features (g^A)
-        self.ije_to_attention_features = pairwise_seq_af_norm([(site_dim*2 + interaction_dim) * heads, site_dim],af_dict[af],pairwise_norm_dict[set_norm])
+        self.ije_to_attention_features = pairwise_seq_af_norm([(site_dim*2 + interaction_dim) * heads,*attention_hidden_layers, site_dim],af_dict[af],pairwise_norm_dict[set_norm])
         #Linear layer on new site features prior to the next attention block / pooling
         self.global_linear = set_seq_af_norm([site_dim * heads, site_bottleneck],af_dict["none"],set_norm_dict["none"])
     @staticmethod
