@@ -1,4 +1,4 @@
-label: "compact_dim_larger_site_full"
+label: "compact_dim_larger_site_tiny"
 
 ###############
 #Features used#
@@ -59,10 +59,10 @@ Optimizer:
 Trainer kwargs:
   accumulate_grad_batches: 1
   auto_lr_find: false
-  max_epochs: 100000000
+  max_epochs: 1000000000
 
 #Limit on dataset size, arbitrarily high number to disable
-Max_Samples: 1000000000
+Max_Samples: 100
 
 #######################
 #Model Hyperparameters#
@@ -97,4 +97,4 @@ post_pool_layers:
 global_dot_hidden_layers:
 - 512
 global_dot_space: 1024
-last_af_func: TReLU
+last_af_func: identity

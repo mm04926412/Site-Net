@@ -181,6 +181,7 @@ class SiteNet(pl.LightningModule):
             self.save_hyperparameters(self.config)
     #Constructs the site features from the individual pieces, including the learnt atomic embeddings if enabled
     def input_handler(self, atomic_number, features, Learnt_Atomic_Embedding=True):
+        #Removed learnt embeddings or one hot encodings for the deep infomax code
         return torch.cat(features, dim=1)
 
     #Inference mode, return the prediction
@@ -334,6 +335,7 @@ class SiteNet_DIM(pl.LightningModule):
             self.automatic_optimization=False
     #Constructs the site features from the individual pieces, including the learnt atomic embeddings if enabled
     def input_handler(self, atomic_number, features):
+        #Removed learnt embeddings or one hot encodings for the deep infomax code
         return torch.cat(features, dim=1)
 
     #Inference mode, return the prediction

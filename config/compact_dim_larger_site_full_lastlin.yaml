@@ -97,4 +97,4 @@ post_pool_layers:
 global_dot_hidden_layers:
 - 512
 global_dot_space: 1024
-last_af_func: TReLU
+last_af_func: identity
