@@ -247,29 +247,31 @@ class SiteNet(pl.LightningModule):
             prediction = prediction.squeeze()
         #Compute the MAE of the batch
         MAE = torch.abs(prediction - batch_dictionary["target"]).mean()
+        MSE = torch.square(prediction - batch_dictionary["target"]).mean()
         #Log the average prediction
         prediction = prediction.mean()
         #Log for tensorboard
         if log_list is not None:
             for i in log_list:
                 self.log(i[0], i[2](locals()[i[1]]), **i[3])
-        return MAE
+        return MAE,MSE
     #Makes sure the model is in training mode, passes a batch through the model, then back propogates
     def training_step(self, batch_dictionary, batch_dictionary_idx):
         self.train()
         log_list = [
             ["MAE", "MAE", lambda _: _, {}, {"prog_bar": True}],
+            ["MSE","MSE", lambda _: _, {}, {"prog_bar": True}],
             ["prediction", "prediction", lambda _: _, {}, {"prog_bar": True}],
         ]
         return self.shared_step(
             batch_dictionary,
             log_list=log_list,
-        )
+        )[1]
     #Makes sure the model is in eval mode then passes a validation sample through the model
     def validation_step(self, batch_dictionary, batch_dictionary_idx):
         self.eval()
         log_list = None
-        return self.shared_step(batch_dictionary, log_list=log_list)
+        return self.shared_step(batch_dictionary, log_list=log_list)[0]
 
     #Configures the optimizer from the config
     def configure_optimizers(self):
