@@ -180,21 +180,23 @@ if __name__ == "__main__":
     parser.add_argument('--primitive', default=False, action='store_true')
     parser.add_argument("-s", "--supercell_size", default=100,type=int)
     parser.add_argument("-w", "--number_of_worker_processes",default = 1,type=int)
+    parser.add_argument("-d", "--matbench_dataset", default = "matbench_mp_gap", type=str )
     args = parser.parse_args()  
     if args.cubic_supercell:
-        h5_file_name = "matbench_mp_gap_cubic_" + str(args.supercell_size)
+        h5_file_name = args.matbench_dataset + "_cubic_" + str(args.supercell_size)
         supercell = True
         supercell_size = args.supercell_size
     elif args.primitive:
-        h5_file_name = "matbench_mp_gap_primitive"
+        h5_file_name = args.matbench_dataset + "_primitive"
         supercell = False
         supercell_size = None
     else:
         raise(Exception("Need to specify either --primitive or --cubic_supercell on commandline, with -s argument controlling supercell size"))
-    task = MatbenchBenchmark().matbench_mp_gap
+    #I know exec is evil but it does the job here
+    exec("task = MatbenchBenchmark()." + args.matbench_dataset)
     task.load()
     fold_n = 1
-    for fold in task.folds[:1]:
+    for fold in task.folds[:2]:
         #Get the data from matbench
         train_inputs, train_outputs = task.get_train_and_val_data(fold)
         test_inputs,test_outputs = task.get_test_data(fold,include_target=True)
