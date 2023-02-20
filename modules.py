@@ -501,6 +501,7 @@ class SiteNetDIMAttentionBlock(nn.Module):
         self.glob_dim = site_dim_per_head
         self.af = af_dict[af]()
         self.k_softmax = k_softmax
+
         self.site_featurization = nn.Linear(
             self.full_elem_token_size, site_dim_per_head * attention_heads
         )
@@ -567,6 +568,8 @@ class SiteNetDIMAttentionBlock(nn.Module):
 
 
     def forward(self, x, Interaction_Features, Attention_Mask, Batch_Mask,KL = False):
+        
+
         #Detach the original input features so they can be used later for DIM
         detached_Interaction_Features = Interaction_Features.detach().clone()
         detached_x_j = x[Batch_Mask["attention_j"],:].detach().clone()

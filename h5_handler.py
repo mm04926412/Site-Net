@@ -340,9 +340,11 @@ def poison_pill(pre, task_queue, h5_group, feature_arrays):
 def featurize_h5_cache_site_features(
     task_queue,
     preprocessing_dict_list,
+    site_label_preprocessing_dict_list,
     bond_preprocessing_dict_list,
     structure_args,
     read_args_site,
+    read_args_site_labels,
     read_args_bond,
     h5_group,
     overwrite,
@@ -350,6 +352,7 @@ def featurize_h5_cache_site_features(
 ):
     structure, target, prim_size, images = read_structures(*structure_args)
     read_site = populate_h5_state_dict(*read_args_site)
+    read_site_labels = populate_h5_state_dict(*read_args_site_labels)
     read_bond = populate_h5_state_dict(*read_args_bond)
     if structure is None:
         return None
@@ -392,6 +395,50 @@ def featurize_h5_cache_site_features(
             site_feature_arrays = np.concatenate([i for i in feature_arrays], axis=1)
         else:
             site_feature_arrays = np.empty((len(structure), 0))
+    except (InvalidEntry, KeyboardInterrupt) as e:
+        raise e
+    except Exception as e:
+        traceback.print_exc()
+        return None, None, structure, target
+
+    # Try block for loading site labels
+    try:
+        feature_arrays = []
+        if site_label_preprocessing_dict_list != None:
+            for pre in site_label_preprocessing_dict_list:
+                if overwrite:
+                    generate_site(pre, structure, task_queue, h5_group, feature_arrays)
+                else:
+                    loaded_value = read_site_labels[str(pre)]
+                    if type(loaded_value) == str:
+                        if loaded_value == "Failed" and ignore_errors is not True:
+                            return None
+                        elif loaded_value == "Generate":
+                            try:
+                                generate_site(
+                                    pre,
+                                    structure,
+                                    task_queue,
+                                    h5_group,
+                                    feature_arrays,
+                                    prim_size,
+                                    images,
+                                )
+                            except KeyboardInterrupt as e:
+                                raise e
+                            except Exception as e:
+                                # traceback.print_exc()
+                                print(e)
+                                poison_pill(pre, task_queue, h5_group, feature_arrays)
+                        else:
+                            raise InvalidEntry(
+                                'Load dictionary should either be the value, "Failed" or "Generate"'
+                            )
+                    else:
+                        feature_arrays.append(loaded_value)
+            site_label_arrays = np.concatenate([i for i in feature_arrays], axis=1)
+        else:
+            site_label_arrays = np.empty((len(structure), 0))
     except (InvalidEntry, KeyboardInterrupt) as e:
         raise e
     except Exception as e:
@@ -445,6 +492,7 @@ def featurize_h5_cache_site_features(
         return None, None, structure, target
     return (
         site_feature_arrays,
+        site_label_arrays,
         bond_feature_arrays,
         structure,
         target,
@@ -499,6 +547,7 @@ def featurize_h5_cache_ElemToken(structure, images):
 def result_get(
     keys,
     site_features_config,
+    site_labels_config,
     bond_features_config,
     h5_file_name,
     overwrite,
@@ -516,6 +565,9 @@ def result_get(
         Read_values_dict_args = (
             (site_features_config, h5_file, key, ignore_errors) for key in keys
         )
+        Read_values_dict_args_sitelabels = (
+            (site_labels_config, h5_file, key, ignore_errors) for key in keys
+        )
         Read_values_dict_args_bonds = (
             (bond_features_config, h5_file, key, ignore_errors) for key in keys
         )
@@ -523,36 +575,42 @@ def result_get(
         # Compute features and add to write queue
         # Site Features
         processed_structure_list = [
-            [i, j, k, l, m, n]
-            for i, j, k, l, m, n in [
+            [i, j, k, l, m, n, o]
+            for i, j, k, l, m, n, o in [
                 featurize_h5_cache_site_features(
                     tasks,
                     site_features_config,
+                    site_labels_config,
                     bond_features_config,
                     i,
                     j1,
                     j2,
+                    j3,
                     k,
                     overwrite,
                     ignore_errors,
                 )
-                for i, j1, j2, k in zip(
+                for i, j1, j2, j3, k in zip(
                     structure_args,
                     Read_values_dict_args,
+                    Read_values_dict_args_sitelabels,
                     Read_values_dict_args_bonds,
                     keys,
                 )
             ]
         ]
         site_result = [i[0] for i in processed_structure_list]
-        bond_result = [i[1] for i in processed_structure_list]
-        structures = [i[2] for i in processed_structure_list]
-        targets = [i[3] for i in processed_structure_list]
-        prim_sizes = [i[4] for i in processed_structure_list]
-        images = [i[5] for i in processed_structure_list]
+        site_label_result = [i[1] for i in processed_structure_list]
+        bond_result = [i[2] for i in processed_structure_list]
+        structures = [i[3] for i in processed_structure_list]
+        targets = [i[4] for i in processed_structure_list]
+        prim_sizes = [i[5] for i in processed_structure_list]
+        images = [i[6] for i in processed_structure_list]
         del processed_structure_list
         for local_dict, value in zip(result, site_result):
             local_dict["Site_Feature_Tensor"] = value
+        for local_dict, value in zip(result, site_label_result):
+            local_dict["Site_Label_Tensor"] = value
         for local_dict, value in zip(result, bond_result):
             local_dict["Interaction_Feature_Tensor"] = value
         # Load in Elemental Tokens
@@ -571,6 +629,7 @@ def result_get(
         h5_file.close()
         keys = [
             "Site_Feature_Tensor",
+            "Site_Label_Tensor",
             "Interaction_Feature_Tensor",
             "Atomic_ID",
             "Oxidation_State",
@@ -592,6 +651,7 @@ def n_list_chunks(lst, n):
 
 def JIT_h5_load(
     site_features_config,
+    site_labels_config,
     bond_features_config,
     h5_file_name,
     max_len,
@@ -627,6 +687,7 @@ def JIT_h5_load(
                     [
                         keys_chunk,
                         site_features_config,
+                        site_labels_config,
                         bond_features_config,
                         h5_file_name,
                         overwrite,
@@ -660,6 +721,7 @@ class torch_h5_cached_loader(Dataset):
     def __init__(
         self,
         Site_Features,
+        Site_Labels,
         Bond_Features,
         h5_file,
         overwrite=False,
@@ -673,6 +735,7 @@ class torch_h5_cached_loader(Dataset):
         self.max_len = max_len
         self.result = JIT_h5_load(
             Site_Features,
+            Site_Labels,
             Bond_Features,
             h5_file,
             max_len,
