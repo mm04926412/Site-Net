@@ -453,14 +453,14 @@ class SiteNet_DIM(pl.LightningModule):
         #Perform a step on predicting the band gap with the learnt global embedding
         task_opt.zero_grad()
         Prediction = self.decoder(Global_Embedding_Features.detach().clone())
-        MAE = torch.abs(Prediction.flatten() - batch_dictionary["target"].flatten()).mean()
-        self.manual_backward(MAE)
+        MSE = torch.square(Prediction.flatten() - batch_dictionary["target"].flatten()).mean()
+        self.manual_backward(MSE)
         task_opt.step()
 
         #"Local_Environment_KL_loss":Local_Environment_KL_loss,
         #"Global_KL_loss":Global_KL_loss,
 
-        self.log_dict({"task_loss":MAE,"Local_Environment_DIM_Loss":Local_Environment_DIM_loss,
+        self.log_dict({"task_loss":MSE,"Local_Environment_DIM_Loss":Local_Environment_DIM_loss,
         "Global_DIM_loss":Global_DIM_loss,"Local_prior_loss":Local_prior_loss,"Global_prior_loss":Global_prior_loss,"Local_KL_loss":Local_Environment_KL_loss,"Global_KL_loss":Global_KL_loss,"Comp_Loss":Composition_Loss},prog_bar=True)
     #Makes sure the model is in eval mode then passes a validation sample through the model
     def validation_step(self, batch_dictionary, batch_dictionary_idx):
@@ -659,6 +659,169 @@ class SiteNet_DIM_regularisation(SiteNet_DIM):
             **Optimizer_Config["Kwargs"],)
 
         return opt
+
+#Combines the local and global optimizer into a single optimizer    
+class SiteNet_DIM_monooptimizer(SiteNet_DIM):
+    def training_step(self, batch_dictionary, batch_dictionary_idx):
+        self.train()
+        global_opt,task_opt,local_prior_opt,global_prior_opt = self.optimizers()
+        Attention_Mask = batch_dictionary["Attention_Mask"]
+        Batch_Mask = batch_dictionary["Batch_Mask"]
+        Site_Features = batch_dictionary["Site_Feature_Tensor"]
+        Interaction_Features = batch_dictionary["Interaction_Feature_Tensor"]
+        Atomic_ID = batch_dictionary["Atomic_ID"]
+        Oxidation_State = batch_dictionary["Oxidation_State"]
+        #Process Samples through input handler
+        Site_Features = self.input_handler(Atomic_ID, [Site_Features, Oxidation_State])
+
+        #Perform a step on creating local environment representations while tricking the prior discriminator
+        global_opt.zero_grad()
+        if self.config["KL_loss_local"] > 0: #If the KL Loss isn't being trained it will inevitably cause NAN values, so it gets turned off
+            KL = True
+        else:
+            KL = False
+
+        Local_Environment_Features,Local_Environment_DIM_loss,Local_Environment_KL_loss = self.Site_DIM(Site_Features, Interaction_Features, Attention_Mask, Batch_Mask,KL=KL)
+        Local_prior_samples = torch.rand_like(Local_Environment_Features)
+        Local_prior_score = F.softplus(-self.Site_Prior(Local_prior_samples))
+        Local_posterior_score = F.softplus(self.Site_Prior(Local_Environment_Features))
+        #Get prior loss per site
+        Local_prior_loss = Local_prior_score+Local_posterior_score
+        #Get prior loss per crystal
+        Local_prior_loss = segment_csr(Local_prior_loss,Batch_Mask["CSR"],reduce="mean")
+        #Get prior loss per batch
+        Local_prior_loss = Local_prior_loss.flatten().mean()
+        Local_Environment_Loss = self.config["DIM_loss_local"]*Local_Environment_DIM_loss + self.config["Prior_loss_local"]*Local_prior_loss + self.config["KL_loss_local"]*Local_Environment_KL_loss
+
+        local_prior_opt.zero_grad()
+        Local_prior_score = F.softplus(self.Site_Prior(Local_prior_samples))
+        Local_posterior_score = F.softplus(-self.Site_Prior(Local_Environment_Features.detach().clone()))
+        #Get prior loss per site
+        Site_prior_loss = Local_prior_score+Local_posterior_score
+        #Get prior loss per crystal
+        Site_prior_loss = segment_csr(Site_prior_loss,Batch_Mask["CSR"],reduce="mean")
+        #Get prior loss per batch
+        Site_prior_loss = Site_prior_loss.flatten().mean()
+        self.manual_backward(Site_prior_loss)
+        local_prior_opt.step()
+
+        #Perform a step on creating global environment representations, loss depends on mutual information and being able to trick the prior discriminator
+        if self.config["KL_loss_global"] > 0: #If the KL Loss isn't being trained it will inevitably cause NAN values, so it gets turned off
+            KL = True
+        else:
+            KL = False
+
+        #We create some synthetic local environments, the composition matches the target crystal but the distances are incorrect, and vice versa
+        # false_sites = self.false_sample(Site_Features,0)
+        # false_interactions = self.false_sample(Interaction_Features,0)
+        # false_attention_mask = self.false_sample(Attention_Mask,0)
+        # false_locals_composition = self.Site_DIM.inference(false_sites,Interaction_Features,Attention_Mask,Batch_Mask)
+        # false_locals_structure = self.Site_DIM.inference(Site_Features,false_interactions,false_attention_mask,Batch_Mask)
+        
+        #Perform global DIM
+        #Global_Embedding_Features,Global_DIM_loss,Global_KL_loss = self.Global_DIM(Local_Environment_Features.detach().clone(),false_locals_composition.detach().clone(),false_locals_structure.detach().clone(),Batch_Mask,KL=KL)
+        Global_Embedding_Features,Global_DIM_loss,Global_KL_loss = self.Global_DIM(Local_Environment_Features,Batch_Mask,KL=KL)
+        Global_prior_samples = torch.rand_like(Global_Embedding_Features)
+        Global_prior_score = F.softplus(-self.Global_Prior(Global_prior_samples))
+        Global_posterior_score = F.softplus(self.Global_Prior(Global_Embedding_Features))
+        Global_prior_loss = (Global_prior_score+Global_posterior_score).flatten().mean()
+        Recon_Composition = self.Composition_Decoder(Global_Embedding_Features).clamp(0)
+        Recon_Composition = Recon_Composition/(torch.sum(Recon_Composition,dim=1).unsqueeze(1).repeat(1,103)+10e-6)
+        Composition_Loss = (-torch.sum(torch.min(Recon_Composition,batch_dictionary["Composition"]),1)).flatten().mean() + 1 #Half taxi cab distance for ternaries
+        Global_Loss = self.config["DIM_loss_global"]*Global_DIM_loss + self.config["Prior_loss_global"]*Global_prior_loss + self.config["KL_loss_global"]*Global_KL_loss + 0*Composition_Loss + Local_Environment_Loss
+        self.manual_backward(Global_Loss)
+        global_opt.step()
+
+        #Train the prior discriminator
+        global_prior_opt.zero_grad()
+        Global_prior_score = F.softplus(self.Global_Prior(Global_prior_samples))
+        Global_posterior_score = F.softplus(-self.Global_Prior(Global_Embedding_Features.detach().clone()))
+        Global_prior_loss_discrim = (Global_prior_score+Global_posterior_score).flatten().mean()
+        self.manual_backward(Global_prior_loss_discrim)
+        global_prior_opt.step()
+
+
+        #Perform a step on predicting the band gap with the learnt global embedding
+        task_opt.zero_grad()
+        Prediction = self.decoder(Global_Embedding_Features.detach().clone())
+        MAE = torch.abs(Prediction.flatten() - batch_dictionary["target"].flatten()).mean()
+        self.manual_backward(MAE)
+        task_opt.step()
+
+        #"Local_Environment_KL_loss":Local_Environment_KL_loss,
+        #"Global_KL_loss":Global_KL_loss,
+
+        self.log_dict({"task_loss":MAE,"Local_Environment_DIM_Loss":Local_Environment_DIM_loss,
+        "Global_DIM_loss":Global_DIM_loss,"Local_prior_loss":Local_prior_loss,"Global_prior_loss":Global_prior_loss,"Local_KL_loss":Local_Environment_KL_loss,"Global_KL_loss":Global_KL_loss,"Comp_Loss":Composition_Loss},prog_bar=True)
+    #Makes sure the model is in eval mode then passes a validation sample through the model
+    def validation_step(self, batch_dictionary, batch_dictionary_idx):
+        self.eval()
+        Attention_Mask = batch_dictionary["Attention_Mask"]
+        Batch_Mask = batch_dictionary["Batch_Mask"]
+        Site_Features = batch_dictionary["Site_Feature_Tensor"]
+        Interaction_Features = batch_dictionary["Interaction_Feature_Tensor"]
+        Atomic_ID = batch_dictionary["Atomic_ID"]
+        Oxidation_State = batch_dictionary["Oxidation_State"]
+        #Process Samples through input handler
+        Site_Features = self.input_handler(Atomic_ID, [Site_Features, Oxidation_State])
+        #Perform site deep infomax to obtain loss and embedding
+        if self.config["KL_loss_local"] > 0: #If the KL Loss isn't being trained it will inevitably cause NAN values, so it gets turned off
+            KL = True
+        else:
+            KL = False
+        Local_Environment_Features,Local_Environment_DIM_loss,Local_Environment_KL_loss = self.Site_DIM(Site_Features, Interaction_Features, Attention_Mask, Batch_Mask,KL=KL)
+        #Detach the local nevironment features and do independant deep infomax to convert local environment features to global features
+        if self.config["KL_loss_global"] > 0: #If the KL Loss isn't being trained it will inevitably cause NAN values, so it gets turned off
+            KL = True
+        else:
+            KL = False
+
+        #We create some synthetic local environments, the composition matches the target crystal but the distances are incorrect, and vice versa
+        #false_sites = self.false_sample(Site_Features,0)
+        #false_interactions = self.false_sample(Interaction_Features,0)
+        #false_attention_mask = self.false_sample(Attention_Mask,0)
+        #false_locals_composition = self.Site_DIM.inference(false_sites,Interaction_Features,Attention_Mask,Batch_Mask)
+        #false_locals_structure = self.Site_DIM.inference(Site_Features,false_interactions,false_attention_mask,Batch_Mask)
+
+        #Get global DIM scores
+        #Global_Embedding_Features,Global_DIM_loss,Global_KL_loss = self.Global_DIM(Local_Environment_Features.detach().clone(),false_locals_composition.detach().clone(),false_locals_structure.detach().clone(),Batch_Mask,KL=KL)
+        Global_Embedding_Features,Global_DIM_loss,Global_KL_loss = self.Global_DIM(Local_Environment_Features.detach().clone(),Batch_Mask,KL=KL)
+        Recon_Composition = self.Composition_Decoder(Global_Embedding_Features).clamp(0)
+        Recon_Composition = Recon_Composition/(torch.sum(Recon_Composition,dim=1).unsqueeze(1).repeat(1,103)+10e-6)
+        Composition_Loss = (-torch.sum(torch.min(Recon_Composition,batch_dictionary["Composition"]),1)).flatten().mean() + 1#Half taxi cab distance for ternaries
+        #Composition_Loss = torch.absolute(Recon_Composition-batch_dictionary["Composition"]).flatten().mean() #taxi cab distance for ternaries
+
+        #Try and perform shallow property prediction using the global representation as a sanity check
+        Prediction = self.decoder(Global_Embedding_Features)
+        MAE = torch.abs(Prediction.flatten() - batch_dictionary["target"].flatten()).mean()
+        return [MAE,Local_Environment_DIM_loss,Local_Environment_KL_loss,Global_DIM_loss,Global_KL_loss,Composition_Loss]
+
+    #Configures the optimizer from the config
+    def configure_optimizers(self):
+        Optimizer_Config = self.config["Optimizer"]
+        #Global DIM optimizer
+        global_opt = optim_dict[Optimizer_Config["Name"]](
+            [{"params":self.Global_DIM.parameters()},{"params":self.Site_DIM.parameters()}],
+            lr=self.config["Learning_Rate"],
+            **Optimizer_Config["Kwargs"],)
+        #Task optimizer
+        task_opt = optim_dict[Optimizer_Config["Name"]](
+            self.decoder.parameters(),
+            lr=0.001,
+            **Optimizer_Config["Kwargs"],)
+        #Local prior optimizer
+        local_prior_opt = optim_dict[Optimizer_Config["Name"]](
+            self.Site_Prior.parameters(),
+            lr=self.config["Learning_Rate"],
+            **Optimizer_Config["Kwargs"],)
+        #Global prior optimizer
+        global_prior_opt = optim_dict[Optimizer_Config["Name"]](
+            self.Global_Prior.parameters(),
+            lr=self.config["Learning_Rate"],
+            **Optimizer_Config["Kwargs"],)
+
+        return global_opt,task_opt,local_prior_opt,global_prior_opt
+
 
 class basic_callbacks(pl.Callback):
     def __init__(self,*pargs,filename = "current_model",**kwargs):

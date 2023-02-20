@@ -68,7 +68,7 @@ labels: 1000
 #Model Hyperparameters#
 #######################
 
-activation_function: relu6
+activation_function: mish
 set_norm: layer
 lin_norm: layer
 

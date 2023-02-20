@@ -8,7 +8,8 @@ from lightning_module import (
     basic_callbacks,
     DIM_h5_Data_Module,
     SiteNet,
-    SiteNet_DIM
+    SiteNet_DIM,
+    SiteNet_DIM_monooptimizer
 )
 from lightning_module import basic_callbacks
 import yaml
@@ -50,7 +51,7 @@ def train_model(config, Dataset):
         #amp_level="O2",
         resume_from_checkpoint=resume_from_checkpoint,
     )
-    model = SiteNet_DIM(config)
+    model = SiteNet_DIM_monooptimizer(config)
     trainer.fit(model, Dataset)
 
 
@@ -78,7 +79,7 @@ if __name__ == "__main__":
             "Config not found or unprovided, a configuration JSON path is REQUIRED to run"
         )
     config["h5_file"] = args.fold_name
-    config["label"] = config["label"] + "_DIM"
+    config["label"] = config["label"] + "_monoDIM"
     if bool(args.debug) == True:
         config["Max_Samples"] = 1000
     if int(args.pickle) == 1:
