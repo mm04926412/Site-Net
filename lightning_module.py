@@ -165,6 +165,7 @@ class SiteNet(pl.LightningModule):
             self.batch_size = self.config["Batch_Size"]
             self.decoder = nn.Linear(self.config["post_pool_layers"][-1], 1)
             self.encoder = SiteNetEncoder(**self.config)
+            self.site_feature_scalers = nn.parameter.Parameter(torch.tensor(self.config["Site_Feature_scalers"]),requires_grad=False)
 
             self.config["pre_pool_layers_n"] = len(config["pre_pool_layers"])
             self.config["pre_pool_layers_size"] = sum(config["pre_pool_layers"]) / len(
@@ -197,7 +198,7 @@ class SiteNet(pl.LightningModule):
         for inference_batch in tqdm(lob):
             batch_dictionary = collate_fn(inference_batch, inference=True)
             Attention_Mask = batch_dictionary["Attention_Mask"]
-            Site_Feature = batch_dictionary["Site_Feature_Tensor"]
+            Site_Feature = batch_dictionary["Site_Feature_Tensor"]*self.site_feature_scalers
             Atomic_ID = batch_dictionary["Atomic_ID"]
             Interaction_Features = batch_dictionary["Interaction_Feature_Tensor"]
             Oxidation_State = batch_dictionary["Oxidation_State"]
@@ -232,7 +233,7 @@ class SiteNet(pl.LightningModule):
         #Unpack the data from the batch dictionary
         Attention_Mask = batch_dictionary["Attention_Mask"]
         Batch_Mask = batch_dictionary["Batch_Mask"]
-        Site_Feature = batch_dictionary["Site_Feature_Tensor"]
+        Site_Feature = batch_dictionary["Site_Feature_Tensor"]*self.site_feature_scalers
         Interaction_Features = batch_dictionary["Interaction_Feature_Tensor"]
         Atomic_ID = batch_dictionary["Atomic_ID"]
         Oxidation_State = batch_dictionary["Oxidation_State"]
@@ -355,12 +356,12 @@ class SiteNet_DIM(pl.LightningModule):
         for inference_batch in tqdm(lob):
             batch_dictionary = collate_fn(inference_batch,inference=True)
             Attention_Mask = batch_dictionary["Attention_Mask"]
-            Site_Features = batch_dictionary["Site_Feature_Tensor"]
+            Site_Features = batch_dictionary["Site_Feature_Tensor"]*self.site_label_scalers
             Atomic_ID = batch_dictionary["Atomic_ID"]
             Interaction_Features = batch_dictionary["Interaction_Feature_Tensor"]
             Oxidation_State = batch_dictionary["Oxidation_State"]
             Batch_Mask = batch_dictionary["Batch_Mask"]
-            Site_Features = self.input_handler(Atomic_ID, [Site_Features, Oxidation_State])*self.site_label_scalers
+            Site_Features = self.input_handler(Atomic_ID, [Site_Features, Oxidation_State])
             Local_Environment_Features = self.Site_DIM.inference(Site_Features, Interaction_Features, Attention_Mask, Batch_Mask)
             Global_Embedding_Features = self.Global_DIM.inference(Local_Environment_Features.detach().clone(),Batch_Mask)
             Encoding_list.append(Global_Embedding_Features)
@@ -879,6 +880,7 @@ class DIM_h5_Data_Module(pl.LightningDataModule):
         cpus = 1,
         chunk_size = 32,
         multitaskmode_labels=False,
+        seed="FIXED_SEED",
         **kwargs
     ):
 
@@ -907,7 +909,8 @@ class DIM_h5_Data_Module(pl.LightningDataModule):
                 overwrite=self.overwrite,
                 limit=self.limit,
                 cpus=cpus,
-                chunk_size=chunk_size
+                chunk_size=chunk_size,
+                seed="FIXED_SEED"
             )
         else:
             self.Dataset = Dataset

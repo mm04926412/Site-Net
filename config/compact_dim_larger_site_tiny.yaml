@@ -27,6 +27,41 @@ Site_Features:
   Featurizer_PArgs: []
   name: SiteElementalProperty
 
+Site_Feature_scalers: #Some properties are in different orders of magnitude and need to be normed
+- 0.1
+- 0.1
+- 1
+- 1
+- 1
+- 10
+- 10
+- 0.001
+
+site_label_size: 8
+Site_Labels:
+- Featurizer_KArgs:
+    properties:
+    - Number
+    - AtomicWeight
+    - Row
+    - Column
+    - FirstIonizationEnergy
+    - Electronegativity
+    - AtomicRadius
+    - Density
+  Featurizer_PArgs: []
+  name: SiteElementalProperty
+
+Site_Label_scalers: #Some properties are in different orders of magnitude and need to be normed
+- 0.1
+- 0.1
+- 1
+- 1
+- 1
+- 10
+- 10
+- 0.001
+
 ###########################
 #Training Hyperparameters#
 ###########################

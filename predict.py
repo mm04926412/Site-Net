@@ -183,7 +183,7 @@ class lightning_module_with_interaction_returns(SiteNet):
         for inference_batch in tqdm(lob):
             batch_dictionary = collate_fn(inference_batch, inference=True)
             Attention_Mask = batch_dictionary["Attention_Mask"]
-            Site_Feature = batch_dictionary["Site_Feature_Tensor"]
+            Site_Feature = batch_dictionary["Site_Feature_Tensor"]*self.site_feature_scalers
             Atomic_ID = batch_dictionary["Atomic_ID"]
             interaction_Features = batch_dictionary["Interaction_Feature_Tensor"]
             Oxidation_State = batch_dictionary["Oxidation_State"]

@@ -1,4 +1,4 @@
-label: "compact_dim_larger_site_med"
+label: "compact_dim_larger_site_lowkl"
 
 ###############
 #Features used#
@@ -37,6 +37,7 @@ Site_Feature_scalers: #Some properties are in different orders of magnitude and 
 - 10
 - 0.001
 
+
 site_label_size: 8
 Site_Labels:
 - Featurizer_KArgs:
@@ -67,15 +68,15 @@ Site_Label_scalers: #Some properties are in different orders of magnitude and ne
 ###########################
 
 #Assign relative weights to the global deep infomax loss
-DIM_loss_global: 0.0
+DIM_loss_global: 1.0
 Prior_loss_global: 0.0
-KL_loss_global: 0.0
-Composition_Loss: 0.0
+KL_loss_global: 0.01
+Composition_Loss: 0.1
 
 #Assign relative weights to the local deep infomax loss
-DIM_loss_local: 0.0
+DIM_loss_local: 1.0
 Prior_loss_local: 0.0
-KL_loss_local: 0.0
+KL_loss_local: 0.01
 
 #Dynamic beatch size is based on number of unique sites not number of crystals
 dynamic_batch: !!bool True
@@ -97,7 +98,7 @@ Trainer kwargs:
   max_epochs: 100000000
 
 #Limit on dataset size, arbitrarily high number to disable
-Max_Samples: 10000
+Max_Samples: 1000000000
 
 #######################
 #Model Hyperparameters#

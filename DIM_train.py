@@ -67,6 +67,7 @@ if __name__ == "__main__":
     parser.add_argument("-d", "--debug", default=False)
     parser.add_argument("-u", "--unit_cell_limit",default = 100)
     parser.add_argument("-w", "--number_of_worker_processes", default=1,type=int)
+    parser.add_argument("-s", "--dataseed", default="FIXED_SEED")
     args = parser.parse_args()
     try:
         print(args.config)
@@ -93,7 +94,8 @@ if __name__ == "__main__":
             max_len=int(args.unit_cell_limit),
             ignore_errors=False,
             overwrite=bool(args.overwrite),
-            cpus=args.number_of_worker_processes
+            cpus=args.number_of_worker_processes,
+            seed=args.dataseed
         )
         if int(args.pickle) == 2:
             dump(Dataset, open("db_pickle.pk", "wb"), compression=compression_alg)

@@ -660,11 +660,12 @@ def JIT_h5_load(
     chunk_size=32,
     cpus=1,
     limit=None,
+    seed="FIXED_SEED"
 ):
     print("h5 file name is " + h5_file_name)
     key_data = h5py.File(h5_file_name, "r")
     keys = list(key_data.keys())
-    random.Random("FIXED_SEED").shuffle(keys) #Destroys any ordering present in the original dataset, in a consistent way
+    random.Random(seed).shuffle(keys) #Destroys any ordering present in the original dataset, in a consistent way
     keys = keys[:limit] #The above Ensures this is a uniform random sample
     key_data.close()
 
@@ -730,6 +731,7 @@ class torch_h5_cached_loader(Dataset):
         chunk_size=32,
         cpus = 1,
         max_len=None,
+        seed="FIXED_SEED"
     ):
         self.chunk_size = chunk_size
         self.max_len = max_len
@@ -743,7 +745,8 @@ class torch_h5_cached_loader(Dataset):
             ignore_errors=ignore_errors,
             limit=limit,
             chunk_size=chunk_size,
-            cpus=cpus
+            cpus=cpus,
+            seed="FIXED_SEED"
         )
 
     def __getitem__(self, idx):

@@ -140,7 +140,7 @@ if __name__ == "__main__":
     pk.dump(results,open("embeddings_with_structures_initial.pk","wb"))
 
     model = SiteNet_DIM(config)
-    model.load_state_dict(torch.load(model_name,map_location=torch.device("cpu"))["state_dict"], strict=False)
+    model.load_state_dict(torch.load(model_name,map_location=torch.device("cpu"))["state_dict"], strict=True)
     results = model.forward(Dataset.Dataset,batch_size=128)
     results_Test = model.forward(Dataset_Test.Dataset,batch_size=128)
     results = pd.DataFrame(results.detach().numpy())

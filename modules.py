@@ -568,8 +568,6 @@ class SiteNetDIMAttentionBlock(nn.Module):
 
 
     def forward(self, x, Interaction_Features, Attention_Mask, Batch_Mask,KL = False):
-        
-
         #Detach the original input features so they can be used later for DIM
         detached_Interaction_Features = Interaction_Features.detach().clone()
         detached_x_j = x[Batch_Mask["attention_j"],:].detach().clone()

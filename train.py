@@ -60,6 +60,7 @@ if __name__ == "__main__":
     parser.add_argument("-u", "--unit_cell_limit",default = 100,type=int)
     parser.add_argument("-w", "--number_of_worker_processes", default=1,type=int)
     parser.add_argument("-e", "--experiment_name", default=None)
+    parser.add_argument("-s", "--dataseed", default="FIXED_SEED")
     args = parser.parse_args()
     torch.set_num_threads(args.number_of_worker_processes)
     try:
@@ -85,6 +86,7 @@ if __name__ == "__main__":
         ignore_errors=False,
         overwrite=bool(args.overwrite),
         cpus=args.number_of_worker_processes,
-        chunk_size=32
+        chunk_size=32,
+        seed=args.dataseed
     )
     train_model(config, Dataset)
