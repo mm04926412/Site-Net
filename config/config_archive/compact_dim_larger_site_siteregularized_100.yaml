@@ -1,0 +1,140 @@
+label: "compact_dim_larger_site_siteregularized_100"
+
+###############
+#Features used#
+###############
+
+interaction_feature_size: 1
+Interaction_Features:
+- kwargs:
+    polynomial_degree: 1
+  name: distance_matrix
+
+
+site_feature_size: 8
+embedding_size: 0
+Site_Features:
+- Featurizer_KArgs:
+    properties:
+    - Number
+    - AtomicWeight
+    - Row
+    - Column
+    - FirstIonizationEnergy
+    - Electronegativity
+    - AtomicRadius
+    - Density
+  Featurizer_PArgs: []
+  name: SiteElementalProperty
+
+Site_Feature_scalers: #Some properties are in different orders of magnitude and need to be normed
+- 0.1
+- 0.1
+- 1
+- 1
+- 1
+- 10
+- 10
+- 0.001
+
+
+site_label_size: 8
+Site_Labels:
+- Featurizer_KArgs:
+    properties:
+    - Number
+    - AtomicWeight
+    - Row
+    - Column
+    - FirstIonizationEnergy
+    - Electronegativity
+    - AtomicRadius
+    - Density
+  Featurizer_PArgs: []
+  name: SiteElementalProperty
+
+Site_Label_scalers: #Some properties are in different orders of magnitude and need to be normed
+- 0.1
+- 0.1
+- 1
+- 1
+- 1
+- 10
+- 10
+- 0.001
+
+###########################
+#Training Hyperparameters#
+###########################
+
+#Assign relative weights to the global deep infomax loss
+DIM_loss_global: 0.0
+Prior_loss_global: 0.0
+KL_loss_global: 0.0
+Composition_Loss: 0.0
+
+#Assign relative weights to the local deep infomax loss
+DIM_loss_local: 0.01
+Prior_loss_local: 0.0
+KL_loss_local: 0.0
+
+#Dynamic beatch size is based on number of unique sites not number of crystals
+dynamic_batch: !!bool True
+Batch_Size: 1200
+
+#Pytorch lightning optimizer name and hyper parameters
+Learning_Rate: 0.0001
+Optimizer:
+  Kwargs:
+    amsgrad: true
+    eps: 1.0e-07
+    weight_decay: 0.0001
+  Name: AdamW
+
+#Allows arguments to be dynamically fed to the pytorch lightning trainer
+Trainer kwargs:
+  accumulate_grad_batches: 1
+  auto_lr_find: false
+  max_epochs: 100000000
+
+#Limit on dataset size, arbitrarily high number to disable
+Max_Samples: 1000000000
+
+#Multi-task-specific
+grad_accumulate: 20
+labels: 100
+
+#######################
+#Model Hyperparameters#
+#######################
+
+activation_function: mish
+set_norm: layer
+lin_norm: layer
+
+site_dim_per_head: 128
+site_bottleneck: 128
+site_dot_hidden_layers:
+- 128
+site_dot_space: 256
+attention_dim_interaction: 128
+
+attention_heads: 1
+attention_blocks: 1
+distance_cutoff: -1 #No cut off, positive values add a cut-off measured in angstroms, made performance worse in testing
+attention_hidden_layers:
+- 128
+k_softmax: -1 #No k softmax, available functionality but unused
+
+#Layers post attention blocks
+pre_pool_layers:
+- 256
+- 512
+sym_func: mean
+post_pool_layers:
+- 256
+- 256
+global_dot_hidden_layers:
+- 512
+global_dot_space: 1024
+last_af_func: TReLU

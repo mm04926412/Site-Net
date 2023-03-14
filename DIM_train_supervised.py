@@ -45,7 +45,7 @@ def train_model(config, Dataset):
         auto_select_gpus=True,
         detect_anomaly=False,
         #gradient_clip_algorithm="value",
-        log_every_n_steps=500,
+        log_every_n_steps=10000,
         val_check_interval=1.0,
         precision=16,
         #amp_level="O2",

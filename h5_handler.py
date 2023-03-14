@@ -746,7 +746,7 @@ class torch_h5_cached_loader(Dataset):
             limit=limit,
             chunk_size=chunk_size,
             cpus=cpus,
-            seed="FIXED_SEED"
+            seed=seed
         )
 
     def __getitem__(self, idx):

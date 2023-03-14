@@ -448,11 +448,12 @@ class SiteNetDIMGlobal(nn.Module):
             Global_Representation = segment_csr(LocalEnvironment_Features,Batch_Mask["CSR"],reduce="max")
         else:
             raise Exception()
+        
         #Apply the post pooling layers
         for idx,(post_pool_layer, post_pool_layer_norm) in enumerate(zip(
             self.post_pool_layers, self.post_pool_layers_norm)
         ):
-            if idx == len(self.post_pool_layers)-1:
+            if idx == len(self.post_pool_layers)-1: #Skip activiation function and normalization on the final layer, otherwise KL divergence term breaks
                 if KL:
                     Global_Representation_log_var = self.post_pool_layer_std(Global_Representation)
                 Global_Representation = post_pool_layer(Global_Representation)
@@ -490,9 +491,10 @@ class SiteNetDIMAttentionBlock(nn.Module):
     def __init__(
         self, af="relu", set_norm="batch",tdot=False,k_softmax=-1,attention_hidden_layers=[256,256],
         site_dim_per_head = 16, attention_heads = 4, attention_dim_interaction = 16,embedding_size=100, site_bottleneck = 64,
-        site_feature_size=1,interaction_feature_size=3, site_dot_space=256,site_dot_hidden_layers=[256],**kwargs
+        site_feature_size=1,interaction_feature_size=3, site_dot_space=256,site_dot_hidden_layers=[256],distance_cutoff=-1,**kwargs
     ):
         super().__init__()
+        self.distance_cutoff=distance_cutoff
         self.full_elem_token_size = embedding_size + site_feature_size + 1
         self.heads = attention_heads
         self.site_dim = site_dim_per_head * attention_heads
@@ -537,6 +539,11 @@ class SiteNetDIMAttentionBlock(nn.Module):
         return torch.roll(x,x.shape[dim]//2,dim)
 
     def inference(self, x, Interaction_Features, Attention_Mask, Batch_Mask,KL = False):
+        if self.distance_cutoff >= 0:
+            cutoff_mask = torch.gt(Interaction_Features[:,:,0],self.distance_cutoff)
+        else:
+            cutoff_mask = None
+
         #Bring Interaction Features to dimensionality expected by the attention blocks
         Interaction_Features = self.interaction_featurization_norm(
             self.af(self.interaction_featurization(Interaction_Features))
@@ -553,6 +560,11 @@ class SiteNetDIMAttentionBlock(nn.Module):
         #Construct the Attention Weights
         multi_headed_attention_weights = self.pre_softmax_linear(self.ije_to_multihead(x_ije)) #g^W
         multi_headed_attention_weights[Attention_Mask] = float("-infinity") #Necessary to avoid interfering with the softmax
+        
+        #Apply cutoff mask
+        if cutoff_mask is not None:
+            multi_headed_attention_weights[cutoff_mask] = float("-infinity")
+
         #Perform softmax on j
         multi_headed_attention_weights = k_softmax(multi_headed_attention_weights, 1,self.k_softmax) #K_softmax is unused in the paper, ability to disable message passing beyond the highest N coefficients, dynamic graph
         #Compute the attention weights and perform attention
@@ -568,6 +580,10 @@ class SiteNetDIMAttentionBlock(nn.Module):
 
 
     def forward(self, x, Interaction_Features, Attention_Mask, Batch_Mask,KL = False):
+        if self.distance_cutoff >= 0:
+            cutoff_mask = torch.gt(Interaction_Features[:,:,0],self.distance_cutoff)
+        else:
+            cutoff_mask = None
         #Detach the original input features so they can be used later for DIM
         detached_Interaction_Features = Interaction_Features.detach().clone()
         detached_x_j = x[Batch_Mask["attention_j"],:].detach().clone()
@@ -586,6 +602,11 @@ class SiteNetDIMAttentionBlock(nn.Module):
         #Construct the Attention Weights
         multi_headed_attention_weights = self.pre_softmax_linear(self.ije_to_multihead(x_ije)) #g^W
         multi_headed_attention_weights[Attention_Mask] = float("-infinity") #Necessary to avoid interfering with the softmax
+        
+        #Apply cutoff mask
+        if cutoff_mask is not None:
+            multi_headed_attention_weights[cutoff_mask] = float("-infinity")
+        
         #Perform softmax on j
         multi_headed_attention_weights = k_softmax(multi_headed_attention_weights, 1,self.k_softmax) #K_softmax is unused in the paper, ability to disable message passing beyond the highest N coefficients, dynamic graph
         #Compute the attention weights and perform attention
