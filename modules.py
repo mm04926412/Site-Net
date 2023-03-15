@@ -427,6 +427,8 @@ class SiteNetDIMGlobal(nn.Module):
     def forward(
         self,
         LocalEnvironment_Features,
+        false_comp_locals,
+        false_interaction_locals,
         Batch_Mask,
         KL = False
     ):
@@ -467,19 +469,19 @@ class SiteNetDIMGlobal(nn.Module):
         else:
             Global_Representation_Sample = self.global_upscale_final_layer(self.global_upscale(Global_Representation))
         local_env_samples = self.localenv_upscale_final_layer(self.localenv_upscale(detached_LocalEnvironment_Features))
-        #local_env_samples_wrong_comp = self.localenv_upscale_final_layer(self.localenv_upscale(false_comp_locals))
-        #local_env_samples_wrong_interaction = self.localenv_upscale_final_layer(self.localenv_upscale(false_interaction_locals))
+        local_env_samples_wrong_comp = self.localenv_upscale_final_layer(self.localenv_upscale(false_comp_locals))
+        local_env_samples_wrong_interaction = self.localenv_upscale_final_layer(self.localenv_upscale(false_interaction_locals))
 
         #Roll the batch mask to get false indicies
         False_Batch_Mask_COO = torch.roll(Batch_Mask["COO"],len(Batch_Mask["COO"])//2,0)
 
         False_Score_1 = F.softplus(torch.einsum("ik,ik->i",Global_Representation_Sample[False_Batch_Mask_COO],local_env_samples))
-        #False_Score_2 = F.softplus(torch.einsum("ik,ik->i",Global_Representation_Sample[Batch_Mask["COO"]],local_env_samples_wrong_comp))
-        #False_Score_3 = F.softplus(torch.einsum("ik,ik->i",Global_Representation_Sample[Batch_Mask["COO"]],local_env_samples_wrong_interaction))
+        False_Score_2 = F.softplus(torch.einsum("ik,ik->i",Global_Representation_Sample[Batch_Mask["COO"]],local_env_samples_wrong_comp))
+        False_Score_3 = F.softplus(torch.einsum("ik,ik->i",Global_Representation_Sample[Batch_Mask["COO"]],local_env_samples_wrong_interaction))
         True_Score = F.softplus(-torch.einsum("ik,ik->i",Global_Representation_Sample[Batch_Mask["COO"]],local_env_samples))
         #Get DIM_loss per crystal
-        #DIM_loss = segment_csr((False_Score_1+False_Score_2+False_Score_3)/3+True_Score,Batch_Mask["CSR"],reduce="mean").flatten().mean()
-        DIM_loss = segment_csr(False_Score_1+True_Score,Batch_Mask["CSR"],reduce="mean").flatten().mean()
+        DIM_loss = segment_csr((False_Score_1+False_Score_2+False_Score_3)/3+True_Score,Batch_Mask["CSR"],reduce="mean").flatten().mean()
+        #DIM_loss = segment_csr(False_Score_1+True_Score,Batch_Mask["CSR"],reduce="mean").flatten().mean()
         if KL:
             KL_loss = (0.5*Global_Representation**2+torch.exp(Global_Representation_log_var)-Global_Representation_log_var).flatten().mean()
         else:
@@ -632,23 +634,23 @@ class SiteNetDIMAttentionBlock(nn.Module):
         x_sample = self.dim_upscale_final_layer(self.dim_upscale(x_sample)[Batch_Mask["attention_i"],:])
         true_queries = self.sample_upscale_final_layer(self.sample_upscale(torch.cat([detached_x_j, detached_Interaction_Features], axis=2)))
         false_queries_1 = self.sample_upscale_final_layer(self.sample_upscale(torch.cat([self.false_sample(detached_x_j,0), self.false_sample(detached_Interaction_Features,0)], axis=2))) #Fully Fake
-        #false_queries_2 = self.sample_upscale_final_layer(self.sample_upscale(torch.cat([detached_x_j, self.false_sample(detached_Interaction_Features,0)], axis=2))) #Fake distances only
-        #false_queries_3 = self.sample_upscale_final_layer(self.sample_upscale(torch.cat([self.false_sample(detached_x_j,0), detached_Interaction_Features], axis=2))) #Fake composition only
+        false_queries_2 = self.sample_upscale_final_layer(self.sample_upscale(torch.cat([detached_x_j, self.false_sample(detached_Interaction_Features,0)], axis=2))) #Fake distances only
+        false_queries_3 = self.sample_upscale_final_layer(self.sample_upscale(torch.cat([self.false_sample(detached_x_j,0), detached_Interaction_Features], axis=2))) #Fake composition only
         #Compute classification score and normalize by distance
         false_scores_1 = F.softplus(torch.einsum("ijk,ijk->ij",x_sample,false_queries_1)).squeeze()*self.false_sample(distance_weights,0) #Need to weight with false distances
-        #false_scores_2 = F.softplus(torch.einsum("ijk,ijk->ij",x_sample,false_queries_2)).squeeze()*self.false_sample(distance_weights,0) #Need to weight with false distances
-        #false_scores_3 = F.softplus(torch.einsum("ijk,ijk->ij",x_sample,false_queries_3)).squeeze()*distance_weights
+        false_scores_2 = F.softplus(torch.einsum("ijk,ijk->ij",x_sample,false_queries_2)).squeeze()*self.false_sample(distance_weights,0) #Need to weight with false distances
+        false_scores_3 = F.softplus(torch.einsum("ijk,ijk->ij",x_sample,false_queries_3)).squeeze()*distance_weights
         true_scores = F.softplus(-torch.einsum("ijk,ijk->ij",x_sample,true_queries)).squeeze()*distance_weights
 
         #Aggregate individual losses over the local environment, weighted by distance
         false_scores_1 =  torch.sum(false_scores_1*self.false_sample(distance_weights_sum_reciprocal,0)*~self.false_sample(Attention_Mask,0),1) #Need to weight with false distances and use false attention mask
-        #false_scores_2 =  torch.sum(false_scores_2*self.false_sample(distance_weights_sum_reciprocal,0)*~Attention_Mask,1) #Need to weight with false distances
-        #false_scores_3 =  torch.sum(false_scores_3*distance_weights_sum_reciprocal*~self.false_sample(Attention_Mask,0),1) #Need to use false attention mask
+        false_scores_2 =  torch.sum(false_scores_2*self.false_sample(distance_weights_sum_reciprocal,0)*~Attention_Mask,1) #Need to weight with false distances
+        false_scores_3 =  torch.sum(false_scores_3*distance_weights_sum_reciprocal*~self.false_sample(Attention_Mask,0),1) #Need to use false attention mask
         true_scores =  torch.sum(true_scores*distance_weights_sum_reciprocal*~Attention_Mask,1)
 
         #Combine losses
         #DIM_loss = (true_scores+(false_scores_1+false_scores_2+false_scores_3)/3).squeeze()
-        DIM_loss = (true_scores+false_scores_1).squeeze()
+        DIM_loss = (true_scores + (false_scores_1 + false_scores_2 + false_scores_3)/3).squeeze()
         #Calculate weighted loss per crystal
         DIM_loss = segment_csr(DIM_loss,Batch_Mask["CSR"],reduce="mean")
         #calculate weighted loss per batch

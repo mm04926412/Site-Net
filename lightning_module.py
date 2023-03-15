@@ -435,15 +435,15 @@ class SiteNet_DIM(pl.LightningModule):
             KL = False
 
         #We create some synthetic local environments, the composition matches the target crystal but the distances are incorrect, and vice versa
-        # false_sites = self.false_sample(Site_Features,0)
-        # false_interactions = self.false_sample(Interaction_Features,0)
-        # false_attention_mask = self.false_sample(Attention_Mask,0)
-        # false_locals_composition = self.Site_DIM.inference(false_sites,Interaction_Features,Attention_Mask,Batch_Mask)
-        # false_locals_structure = self.Site_DIM.inference(Site_Features,false_interactions,false_attention_mask,Batch_Mask)
+        false_sites = self.false_sample(Site_Features,0)
+        false_interactions = self.false_sample(Interaction_Features,0)
+        false_attention_mask = self.false_sample(Attention_Mask,0)
+        false_locals_composition = self.Site_DIM.inference(false_sites,Interaction_Features,Attention_Mask,Batch_Mask)
+        false_locals_structure = self.Site_DIM.inference(Site_Features,false_interactions,false_attention_mask,Batch_Mask)
         
         #Perform global DIM
-        #Global_Embedding_Features,Global_DIM_loss,Global_KL_loss = self.Global_DIM(Local_Environment_Features.detach().clone(),false_locals_composition.detach().clone(),false_locals_structure.detach().clone(),Batch_Mask,KL=KL)
-        Global_Embedding_Features,Global_DIM_loss,Global_KL_loss = self.Global_DIM(Local_Environment_Features.detach().clone(),Batch_Mask,KL=KL)
+        Global_Embedding_Features,Global_DIM_loss,Global_KL_loss = self.Global_DIM(Local_Environment_Features.detach().clone(),false_locals_composition.detach().clone(),false_locals_structure.detach().clone(),Batch_Mask,KL=KL)
+        #Global_Embedding_Features,Global_DIM_loss,Global_KL_loss = self.Global_DIM(Local_Environment_Features.detach().clone(),Batch_Mask,KL=KL)
         Global_prior_samples = torch.rand_like(Global_Embedding_Features)
         Global_prior_score = F.softplus(-self.Global_Prior(Global_prior_samples))
         Global_posterior_score = F.softplus(self.Global_Prior(Global_Embedding_Features))
@@ -503,15 +503,15 @@ class SiteNet_DIM(pl.LightningModule):
             KL = False
 
         #We create some synthetic local environments, the composition matches the target crystal but the distances are incorrect, and vice versa
-        #false_sites = self.false_sample(Site_Features,0)
-        #false_interactions = self.false_sample(Interaction_Features,0)
-        #false_attention_mask = self.false_sample(Attention_Mask,0)
-        #false_locals_composition = self.Site_DIM.inference(false_sites,Interaction_Features,Attention_Mask,Batch_Mask)
-        #false_locals_structure = self.Site_DIM.inference(Site_Features,false_interactions,false_attention_mask,Batch_Mask)
+        false_sites = self.false_sample(Site_Features,0)
+        false_interactions = self.false_sample(Interaction_Features,0)
+        false_attention_mask = self.false_sample(Attention_Mask,0)
+        false_locals_composition = self.Site_DIM.inference(false_sites,Interaction_Features,Attention_Mask,Batch_Mask)
+        false_locals_structure = self.Site_DIM.inference(Site_Features,false_interactions,false_attention_mask,Batch_Mask)
 
         #Get global DIM scores
-        #Global_Embedding_Features,Global_DIM_loss,Global_KL_loss = self.Global_DIM(Local_Environment_Features.detach().clone(),false_locals_composition.detach().clone(),false_locals_structure.detach().clone(),Batch_Mask,KL=KL)
-        Global_Embedding_Features,Global_DIM_loss,Global_KL_loss = self.Global_DIM(Local_Environment_Features.detach().clone(),Batch_Mask,KL=KL)
+        Global_Embedding_Features,Global_DIM_loss,Global_KL_loss = self.Global_DIM(Local_Environment_Features,false_locals_composition,false_locals_structure,Batch_Mask,KL=KL)
+        #Global_Embedding_Features,Global_DIM_loss,Global_KL_loss = self.Global_DIM(Local_Environment_Features.detach().clone(),Batch_Mask,KL=KL)
         Recon_Composition = self.Composition_Decoder(Global_Embedding_Features).clamp(0)
         Recon_Composition = Recon_Composition/(torch.sum(Recon_Composition,dim=1).unsqueeze(1).repeat(1,103)+10e-6)
         Composition_Loss = (-torch.sum(torch.min(Recon_Composition,batch_dictionary["Composition"]),1)).flatten().mean() + 1#Half taxi cab distance for ternaries
@@ -579,59 +579,45 @@ class SiteNet_DIM_supervisedcontrol(SiteNet_DIM):
     def __init__(
         self,
         config=None,
+        freeze="Neither"
+
     ):
-        super().__init__()
-        self.last_layer = nn.Linear(config["post_pool_layers"][-1],1)
+        super().__init__(config)
+        self.freeze = freeze
+        self.last_layer = nn.Sequential(nn.Linear(config["post_pool_layers"][-1],64),nn.Mish(),nn.Linear(64,1))
 
     def training_step(self, batch_dictionary, batch_dictionary_idx):
         self.train()
         opt = self.optimizers()
+        opt.zero_grad()
         Attention_Mask = batch_dictionary["Attention_Mask"]
         Batch_Mask = batch_dictionary["Batch_Mask"]
         Site_Features = batch_dictionary["Site_Feature_Tensor"]*self.site_feature_scalers
         Interaction_Features = batch_dictionary["Interaction_Feature_Tensor"]
         Atomic_ID = batch_dictionary["Atomic_ID"]
         Oxidation_State = batch_dictionary["Oxidation_State"]
+
         #Process Samples through input handler
         Site_Features = self.input_handler(Atomic_ID, [Site_Features, Oxidation_State])
 
-        if self.config["KL_loss_local"] > 0: #If the KL Loss isn't being trained it will inevitably cause NAN values, so it gets turned off
-            KL = True
+        if self.freeze == "Local" or self.freeze == "Both":
+            Local_Environment_Features = self.Site_DIM.inference(Site_Features, Interaction_Features, Attention_Mask, Batch_Mask).detach().clone()
         else:
-            KL = False
+            Local_Environment_Features = self.Site_DIM.inference(Site_Features, Interaction_Features, Attention_Mask, Batch_Mask)
 
-        Local_Environment_Features,Local_Environment_DIM_loss,Local_Environment_KL_loss = self.Site_DIM(Site_Features, Interaction_Features, Attention_Mask, Batch_Mask,KL=KL)
-
-        #Perform a step on creating global environment representations, loss depends on mutual information and being able to trick the prior discriminator
-        if self.config["KL_loss_global"] > 0: #If the KL Loss isn't being trained it will inevitably cause NAN values, so it gets turned off
-            KL = True
+        if self.freeze == "Global" or self.freeze == "Both":
+            Global_Embedding_Features = self.Global_DIM.inference(Local_Environment_Features,Batch_Mask).detach().clone()
         else:
-            KL = False
-
-        #We create some synthetic local environments, the composition matches the target crystal but the distances are incorrect, and vice versa
-        #false_sites = self.false_sample(Site_Features,0)
-        #false_interactions = self.false_sample(Interaction_Features,0)
-        #false_attention_mask = self.false_sample(Attention_Mask,0)
-        #false_locals_composition = self.Site_DIM.inference(false_sites,Interaction_Features,Attention_Mask,Batch_Mask)
-        #false_locals_structure = self.Site_DIM.inference(Site_Features,false_interactions,false_attention_mask,Batch_Mask)
+            Global_Embedding_Features = self.Global_DIM.inference(Local_Environment_Features,Batch_Mask)
         
-        #Perform global DIM
-        #Global_Embedding_Features,Global_DIM_loss,Global_KL_loss = self.Global_DIM(Local_Environment_Features.detach().clone(),false_locals_composition.detach().clone(),false_locals_structure.detach().clone(),Batch_Mask,KL=KL)
-        Global_Embedding_Features,Global_DIM_loss,Global_KL_loss = self.Global_DIM(Local_Environment_Features,Batch_Mask,KL=KL)
 
         Prediction = self.decoder(Global_Embedding_Features)
-        MSE = torch.square(Prediction.flatten()[0] - batch_dictionary["target"].flatten()[0]) #Only the first sample in the dictionary is a "labeled" sample
-        loss = MSE + self.config["DIM_loss_local"]*Local_Environment_DIM_loss + self.config["KL_loss_local"]*Local_Environment_KL_loss + self.config["DIM_loss_global"]*Global_DIM_loss + self.config["KL_loss_global"]*Global_KL_loss
-        self.manual_backward(loss)
-        
-        if (batch_dictionary_idx + 1) % self.config["grad_accumulate"] == 0:
-            opt.step()
-            opt.zero_grad()
-        #"Local_Environment_KL_loss":Local_Environment_KL_loss,
-        #"Global_KL_loss":Global_KL_loss,
+        MSE = torch.square(Prediction.flatten() - batch_dictionary["target"].flatten()).mean()
+        self.manual_backward(MSE)
+        opt.step()
+        opt.zero_grad()
+        self.log_dict({"task_loss":MSE},prog_bar=True)
 
-        self.log_dict({"task_loss":MSE,"Local_Environment_DIM_Loss":Local_Environment_DIM_loss,
-        "Global_DIM_loss":Global_DIM_loss,"Local_KL_loss":Local_Environment_KL_loss,"Global_KL_loss":Global_KL_loss},prog_bar=True)
     #Makes sure the model is in eval mode then passes a validation sample through the model
     def validation_step(self, batch_dictionary, batch_dictionary_idx):
         self.eval()
@@ -643,52 +629,23 @@ class SiteNet_DIM_supervisedcontrol(SiteNet_DIM):
         Oxidation_State = batch_dictionary["Oxidation_State"]
         #Process Samples through input handler
         Site_Features = self.input_handler(Atomic_ID, [Site_Features, Oxidation_State])
-        #Perform site deep infomax to obtain loss and embedding
-        if self.config["KL_loss_local"] > 0: #If the KL Loss isn't being trained it will inevitably cause NAN values, so it gets turned off
-            KL = True
-        else:
-            KL = False
-        Local_Environment_Features,Local_Environment_DIM_loss,Local_Environment_KL_loss = self.Site_DIM(Site_Features, Interaction_Features, Attention_Mask, Batch_Mask,KL=KL)
-        #Detach the local nevironment features and do independant deep infomax to convert local environment features to global features
-        if self.config["KL_loss_global"] > 0: #If the KL Loss isn't being trained it will inevitably cause NAN values, so it gets turned off
-            KL = True
-        else:
-            KL = False
-
-        #We create some synthetic local environments, the composition matches the target crystal but the distances are incorrect, and vice versa
-        # false_sites = self.false_sample(Site_Features,0)
-        # false_interactions = self.false_sample(Interaction_Features,0)
-        # false_attention_mask = self.false_sample(Attention_Mask,0)
-        # false_locals_composition = self.Site_DIM.inference(false_sites,Interaction_Features,Attention_Mask,Batch_Mask)
-        # false_locals_structure = self.Site_DIM.inference(Site_Features,false_interactions,false_attention_mask,Batch_Mask)
-
-        #Get global DIM scores
-        #Global_Embedding_Features,Global_DIM_loss,Global_KL_loss = self.Global_DIM(Local_Environment_Features.detach().clone(),false_locals_composition.detach().clone(),false_locals_structure.detach().clone(),Batch_Mask,KL=KL)
-        Global_Embedding_Features,Global_DIM_loss,Global_KL_loss = self.Global_DIM(Local_Environment_Features.detach().clone(),Batch_Mask,KL=KL)
-        #Try and perform shallow property prediction using the global representation as a sanity check
+        Local_Environment_Features = self.Site_DIM.inference(Site_Features, Interaction_Features, Attention_Mask, Batch_Mask)
+        Global_Embedding_Features = self.Global_DIM.inference(Local_Environment_Features,Batch_Mask)
         Prediction = self.decoder(Global_Embedding_Features)
         MAE = torch.abs(Prediction.flatten() - batch_dictionary["target"].flatten()).mean()
-        return [MAE,Local_Environment_DIM_loss,Local_Environment_KL_loss,Global_DIM_loss,Global_KL_loss]
+        return [MAE]
     
     #Log the validation loss on every validation epoch
     def validation_epoch_end(self, outputs):
         self.avg_loss_task = torch.stack([i[0] for i in outputs]).mean()
-        self.Local_Environment_DIM_loss = torch.stack([i[1] for i in outputs]).mean()
-        self.Local_Environment_KL_loss = torch.stack([i[2] for i in outputs]).mean()
-        self.Global_DIM_loss = torch.stack([i[3] for i in outputs]).mean()
-        self.Global_KL_loss = torch.stack([i[4] for i in outputs]).mean()
         self.log("avg_val_loss_task", self.avg_loss_task)
-        self.log("avg_val_loss_local_DIM",self.Local_Environment_DIM_loss)
-        self.log("avg_val_loss_global_DIM",self.Global_DIM_loss)
-        self.log("avg_val_loss_local_KL",self.Local_Environment_KL_loss)
-        self.log("avg_val_loss_global_KL",self.Global_KL_loss)
 
     #Configures the optimizer from the config
     def configure_optimizers(self):
         Optimizer_Config = self.config["Optimizer"]
         #Local DIM optimizer
         opt = optim_dict[Optimizer_Config["Name"]](
-            self.Site_DIM.parameters(),
+            self.parameters(),
             lr=self.config["Learning_Rate"],
             **Optimizer_Config["Kwargs"],)
 
@@ -800,7 +757,7 @@ class SiteNet_DIM_regularisation(SiteNet_DIM):
         Optimizer_Config = self.config["Optimizer"]
         #Local DIM optimizer
         opt = optim_dict[Optimizer_Config["Name"]](
-            self.Site_DIM.parameters(),
+            self.parameters(),
             lr=self.config["Learning_Rate"],
             **Optimizer_Config["Kwargs"],)
 
@@ -858,15 +815,15 @@ class SiteNet_DIM_monooptimizer(SiteNet_DIM):
             KL = False
 
         #We create some synthetic local environments, the composition matches the target crystal but the distances are incorrect, and vice versa
-        # false_sites = self.false_sample(Site_Features,0)
-        # false_interactions = self.false_sample(Interaction_Features,0)
-        # false_attention_mask = self.false_sample(Attention_Mask,0)
-        # false_locals_composition = self.Site_DIM.inference(false_sites,Interaction_Features,Attention_Mask,Batch_Mask)
-        # false_locals_structure = self.Site_DIM.inference(Site_Features,false_interactions,false_attention_mask,Batch_Mask)
+        false_sites = self.false_sample(Site_Features,0)
+        false_interactions = self.false_sample(Interaction_Features,0)
+        false_attention_mask = self.false_sample(Attention_Mask,0)
+        false_locals_composition = self.Site_DIM.inference(false_sites,Interaction_Features,Attention_Mask,Batch_Mask)
+        false_locals_structure = self.Site_DIM.inference(Site_Features,false_interactions,false_attention_mask,Batch_Mask)
         
         #Perform global DIM
-        #Global_Embedding_Features,Global_DIM_loss,Global_KL_loss = self.Global_DIM(Local_Environment_Features.detach().clone(),false_locals_composition.detach().clone(),false_locals_structure.detach().clone(),Batch_Mask,KL=KL)
-        Global_Embedding_Features,Global_DIM_loss,Global_KL_loss = self.Global_DIM(Local_Environment_Features,Batch_Mask,KL=KL)
+        Global_Embedding_Features,Global_DIM_loss,Global_KL_loss = self.Global_DIM(Local_Environment_Features,false_locals_composition,false_locals_structure,Batch_Mask,KL=KL)
+        #Global_Embedding_Features,Global_DIM_loss,Global_KL_loss = self.Global_DIM(Local_Environment_Features,Batch_Mask,KL=KL)
         Global_prior_samples = torch.rand_like(Global_Embedding_Features)
         Global_prior_score = F.softplus(-self.Global_Prior(Global_prior_samples))
         Global_posterior_score = F.softplus(self.Global_Prior(Global_Embedding_Features))
@@ -930,8 +887,8 @@ class SiteNet_DIM_monooptimizer(SiteNet_DIM):
         #false_locals_structure = self.Site_DIM.inference(Site_Features,false_interactions,false_attention_mask,Batch_Mask)
 
         #Get global DIM scores
-        #Global_Embedding_Features,Global_DIM_loss,Global_KL_loss = self.Global_DIM(Local_Environment_Features.detach().clone(),false_locals_composition.detach().clone(),false_locals_structure.detach().clone(),Batch_Mask,KL=KL)
-        Global_Embedding_Features,Global_DIM_loss,Global_KL_loss = self.Global_DIM(Local_Environment_Features.detach().clone(),Batch_Mask,KL=KL)
+        Global_Embedding_Features,Global_DIM_loss,Global_KL_loss = self.Global_DIM(Local_Environment_Features,false_locals_composition,false_locals_structure,Batch_Mask,KL=KL)
+        #Global_Embedding_Features,Global_DIM_loss,Global_KL_loss = self.Global_DIM(Local_Environment_Features.detach().clone(),Batch_Mask,KL=KL)
         Recon_Composition = self.Composition_Decoder(Global_Embedding_Features).clamp(0)
         Recon_Composition = Recon_Composition/(torch.sum(Recon_Composition,dim=1).unsqueeze(1).repeat(1,103)+10e-6)
         Composition_Loss = (-torch.sum(torch.min(Recon_Composition,batch_dictionary["Composition"]),1)).flatten().mean() + 1#Half taxi cab distance for ternaries

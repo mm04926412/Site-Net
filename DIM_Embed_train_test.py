@@ -17,6 +17,7 @@ import argparse
 import os
 import torch
 import pandas as pd
+from scipy import stats
 import numpy as np
 import sys, os
 from modules import SiteNetAttentionBlock,SiteNetEncoder,k_softmax
@@ -54,9 +55,12 @@ if __name__ == "__main__":
                         ["onlycomp","config/compact_dim_onlycomp.yaml","Data/Matbench/matbench_mp_e_form_cubic_50_train_1.hdf5_best_compact_dim_onlycomp_DIM.ckpt"],
                         ["control","config/compact_dim_nothing.yaml","Data/Matbench/matbench_mp_e_form_cubic_50_train_1.hdf5_best_compact_dim_nothing_DIM.ckpt"],
                         ["control_cutoff5","config/compact_dim_nothing_cutoff5.yaml","Data/Matbench/matbench_mp_e_form_cubic_50_train_1.hdf5_best_compact_dim_nothing_cutoff5_DIM-v2.ckpt"],
-                        ["nonorm_cutoff5","config/compact_dim_nonorm_cutoff5.yaml","Data/Matbench/matbench_mp_e_form_cubic_50_train_1.hdf5_best_compact_dim_nonorm_cutoff5_DIM.ckpt"]]
+                        ["nonorm_cutoff5","config/compact_dim_nonorm_cutoff5.yaml","Data/Matbench/matbench_mp_e_form_cubic_50_train_1.hdf5_best_compact_dim_nonorm_cutoff5_DIM.ckpt"],
+                        ["klnorm_multiloss","config/compact_dim_klnorm.yaml","Data/Matbench/matbench_mp_e_form_cubic_50_train_1.hdf5_best_compact_dim_klnorm_DIM-v2.ckpt"]]
 
-    limits = [100,1000,10000]
+    #config_and_model = [["klnorm_multiloss","config/compact_dim_klnorm.yaml","Data/Matbench/matbench_mp_e_form_cubic_50_train_1.hdf5_best_compact_dim_klnorm_DIM-v2.ckpt"]]
+
+    limits = [100, 1000, 10000]
 
     results_dataframe = pd.DataFrame(columns = ["rf_R2","rf_MAE","rf_MSE","nn_R2","nn_MAE","nn_MSE","lin_R2","lin_MAE","lin_MSE","model","limit","schema"])
 
@@ -115,8 +119,6 @@ if __name__ == "__main__":
             samples = [np.random.choice(np.arange(len(Dataset.Dataset)), size=min(limit,len(Dataset.Dataset)), replace=False) for i in range(args.repeats)]
             for i,sample in enumerate(samples):
                 model = SiteNet_DIM(config)
-
-                sample = np.random.choice(np.arange(len(Dataset.Dataset)), size=min(limit,len(Dataset.Dataset)), replace=False) #Randomly select indicies without replacement
                 results = model.forward([Dataset.Dataset[i] for i in sample],batch_size=128).detach().numpy()
                 results_y = np.array([Dataset.Dataset[i]["target"] for i in sample])
 
@@ -124,7 +126,7 @@ if __name__ == "__main__":
                 results_test_y = np.array([Dataset_Test.Dataset[i]["target"] for i in range(len(Dataset_Test.Dataset))])
 
                 rf = RandomForestRegressor().fit(results, results_y)
-                nn = MLPRegressor(hidden_layer_sizes=64, max_iter=1000).fit(results, results_y)
+                nn = MLPRegressor(hidden_layer_sizes=64, max_iter=5000).fit(results, results_y)
                 lin = LinearRegression().fit(results, results_y)
 
                 rows = rows.append(pd.DataFrame({
@@ -144,7 +146,22 @@ if __name__ == "__main__":
             initial_means["model"] = cm[0]
             initial_means["limit"] = limit
             initial_means["schema"] = "Initial"
+            initial_means["measure"] = "Mean"
             results_dataframe = results_dataframe.append(initial_means, ignore_index=True)
+
+            initial_medians = rows.median()
+            initial_medians["model"] = cm[0]
+            initial_medians["limit"] = limit
+            initial_medians["schema"] = "Initial"
+            initial_medians["measure"] = "Median"
+            results_dataframe = results_dataframe.append(initial_medians, ignore_index=True)
+
+            initial_stds = rows.std(ddof=0)
+            initial_stds["model"] = cm[0]
+            initial_stds["limit"] = limit
+            initial_stds["schema"] = "Initial"
+            initial_stds["measure"] = "STD"
+            results_dataframe = results_dataframe.append(initial_stds, ignore_index=True)
 
 
             model = SiteNet_DIM(config)
@@ -158,7 +175,7 @@ if __name__ == "__main__":
             for i,sample in enumerate(samples):
 
                 rf = RandomForestRegressor().fit(results[sample,:], results_y[sample])
-                nn = MLPRegressor(hidden_layer_sizes=64, max_iter=1000).fit(results[sample,:], results_y[sample])
+                nn = MLPRegressor(hidden_layer_sizes=64, max_iter=5000).fit(results[sample,:], results_y[sample])
                 lin = LinearRegression().fit(results[sample,:], results_y[sample])
 
                 rows = rows.append(pd.DataFrame({
@@ -178,6 +195,21 @@ if __name__ == "__main__":
             DIM_means["model"] = cm[0]
             DIM_means["limit"] = limit
             DIM_means["schema"] = "DIM"
+            DIM_means["measure"] = "Mean"
             results_dataframe = results_dataframe.append(DIM_means, ignore_index=True)
+
+            DIM_medians = rows.median()
+            DIM_medians["model"] = cm[0]
+            DIM_medians["limit"] = limit
+            DIM_medians["schema"] = "DIM"
+            DIM_medians["measure"] = "Median"
+            results_dataframe = results_dataframe.append(DIM_medians, ignore_index=True)
+
+            DIM_stds = rows.std(ddof=0)
+            DIM_stds["model"] = cm[0]
+            DIM_stds["limit"] = limit
+            DIM_stds["schema"] = "DIM"
+            DIM_stds["measure"] = "STD"
+            results_dataframe = results_dataframe.append(DIM_stds, ignore_index=True)
 
             results_dataframe.to_csv("Downstream_DIM.csv")  
