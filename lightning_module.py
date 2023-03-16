@@ -203,6 +203,7 @@ class SiteNet(pl.LightningModule):
             Interaction_Features = batch_dictionary["Interaction_Feature_Tensor"]
             Oxidation_State = batch_dictionary["Oxidation_State"]
             Batch_Mask = batch_dictionary["Batch_Mask"]
+
             concat_embedding = self.input_handler(
                 Atomic_ID, [Site_Feature, Oxidation_State]
             )
@@ -348,25 +349,28 @@ class SiteNet_DIM(pl.LightningModule):
         return torch.cat(features, dim=1)
 
     #Inference mode, return the prediction
-    def forward(self, b, batch_size=16):       
-        self.eval()
-        lob = [b[i : min(i + batch_size,len(b))] for i in range(0, len(b), batch_size)]
-        Encoding_list = []
-        print("Inference in batches of %s" % batch_size)
-        for inference_batch in tqdm(lob):
-            batch_dictionary = collate_fn(inference_batch,inference=True)
-            Attention_Mask = batch_dictionary["Attention_Mask"]
-            Site_Features = batch_dictionary["Site_Feature_Tensor"]*self.site_label_scalers
-            Atomic_ID = batch_dictionary["Atomic_ID"]
-            Interaction_Features = batch_dictionary["Interaction_Feature_Tensor"]
-            Oxidation_State = batch_dictionary["Oxidation_State"]
-            Batch_Mask = batch_dictionary["Batch_Mask"]
-            Site_Features = self.input_handler(Atomic_ID, [Site_Features, Oxidation_State])
-            Local_Environment_Features = self.Site_DIM.inference(Site_Features, Interaction_Features, Attention_Mask, Batch_Mask)
-            Global_Embedding_Features = self.Global_DIM.inference(Local_Environment_Features.detach().clone(),Batch_Mask)
-            Encoding_list.append(Global_Embedding_Features)
-        Encoding = torch.cat(Encoding_list, dim=0)
-        return Encoding
+    def forward(self, b, batch_size=16):
+        with torch.no_grad():  
+            self.eval()
+            lob = [b[i : min(i + batch_size,len(b))] for i in range(0, len(b), batch_size)]
+            Encoding_list = []
+            print("Inference in batches of %s" % batch_size)
+            for inference_batch in tqdm(lob):
+                batch_dictionary = collate_fn(inference_batch,inference=True)
+
+                Attention_Mask = batch_dictionary["Attention_Mask"].to(self.device)
+                Site_Features = batch_dictionary["Site_Feature_Tensor"].to(self.device)*self.site_label_scalers
+                Atomic_ID = batch_dictionary["Atomic_ID"].to(self.device)
+                Interaction_Features = batch_dictionary["Interaction_Feature_Tensor"].to(self.device)
+                Oxidation_State = batch_dictionary["Oxidation_State"].to(self.device)
+                Batch_Mask = {i:j.to(self.device) for i,j in batch_dictionary["Batch_Mask"].items()}
+                
+                Site_Features = self.input_handler(Atomic_ID, [Site_Features, Oxidation_State])
+                Local_Environment_Features = self.Site_DIM.inference(Site_Features, Interaction_Features, Attention_Mask, Batch_Mask)
+                Global_Embedding_Features = self.Global_DIM.inference(Local_Environment_Features.detach().clone(),Batch_Mask)
+                Encoding_list.append(Global_Embedding_Features)
+            Encoding = torch.cat(Encoding_list, dim=0)
+            return Encoding
 
     @staticmethod
     #This requires the batch size to be at least twice as large as the largest sample
