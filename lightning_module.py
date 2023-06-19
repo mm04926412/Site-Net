@@ -19,6 +19,7 @@ from itertools import cycle,islice
 from random import shuffle
 from matminer.featurizers.composition.element import ElementFraction
 from matminer.featurizers.site.chemical import ChemicalSRO,EwaldSiteEnergy,LocalPropertyDifference
+import sys
 #Clamps negative predictions to zero without interfering with the gradients. "Transparent" ReLU
 class TReLU(torch.autograd.Function):
     """
@@ -439,14 +440,23 @@ class SiteNet_DIM(pl.LightningModule):
             KL = False
 
         #We create some synthetic local environments, the composition matches the target crystal but the distances are incorrect, and vice versa
-        false_sites = self.false_sample(Site_Features,0)
-        false_interactions = self.false_sample(Interaction_Features,0)
-        false_attention_mask = self.false_sample(Attention_Mask,0)
-        false_locals_composition = self.Site_DIM.inference(false_sites,Interaction_Features,Attention_Mask,Batch_Mask)
-        false_locals_structure = self.Site_DIM.inference(Site_Features,false_interactions,false_attention_mask,Batch_Mask)
-        
+        with torch.no_grad():
+            false_sites = self.false_sample(Site_Features,0)
+            false_interactions = self.false_sample(Interaction_Features,0)
+            false_attention_mask = self.false_sample(Attention_Mask,0)
+            false_locals_composition = self.Site_DIM.inference(false_sites,Interaction_Features,Attention_Mask,Batch_Mask).detach().clone()
+            false_locals_structure = self.Site_DIM.inference(Site_Features,false_interactions,false_attention_mask,Batch_Mask).detach().clone()
+
+            Perturbed_Batch_Mask = dict(Batch_Mask)
+            Perturbed_Batch_Mask["attention_j"] = Perturbed_Batch_Mask["attention_j"].detach().clone()
+            Perturbed_Batch_Mask["attention_j"] = Perturbed_Batch_Mask["attention_j"][:,torch.randperm(Perturbed_Batch_Mask["attention_j"].shape[1])]
+
+            false_locals_permuted = self.Site_DIM.inference(Site_Features,Interaction_Features,Attention_Mask,Perturbed_Batch_Mask).detach().clone()
+
+            engineered_false_locals_list = [false_locals_composition,false_locals_structure,false_locals_permuted]
+
         #Perform global DIM
-        Global_Embedding_Features,Global_DIM_loss,Global_KL_loss = self.Global_DIM(Local_Environment_Features.detach().clone(),false_locals_composition.detach().clone(),false_locals_structure.detach().clone(),Batch_Mask,KL=KL)
+        Global_Embedding_Features,Global_DIM_loss,Global_KL_loss = self.Global_DIM(Local_Environment_Features.detach().clone(),engineered_false_locals_list,Batch_Mask,KL=KL)
         #Global_Embedding_Features,Global_DIM_loss,Global_KL_loss = self.Global_DIM(Local_Environment_Features.detach().clone(),Batch_Mask,KL=KL)
         Global_prior_samples = torch.rand_like(Global_Embedding_Features)
         Global_prior_score = F.softplus(-self.Global_Prior(Global_prior_samples))
@@ -510,11 +520,19 @@ class SiteNet_DIM(pl.LightningModule):
         false_sites = self.false_sample(Site_Features,0)
         false_interactions = self.false_sample(Interaction_Features,0)
         false_attention_mask = self.false_sample(Attention_Mask,0)
-        false_locals_composition = self.Site_DIM.inference(false_sites,Interaction_Features,Attention_Mask,Batch_Mask)
-        false_locals_structure = self.Site_DIM.inference(Site_Features,false_interactions,false_attention_mask,Batch_Mask)
+        false_locals_composition = self.Site_DIM.inference(false_sites,Interaction_Features,Attention_Mask,Batch_Mask).detach().clone()
+        false_locals_structure = self.Site_DIM.inference(Site_Features,false_interactions,false_attention_mask,Batch_Mask).detach().clone()
 
-        #Get global DIM scores
-        Global_Embedding_Features,Global_DIM_loss,Global_KL_loss = self.Global_DIM(Local_Environment_Features,false_locals_composition,false_locals_structure,Batch_Mask,KL=KL)
+        Perturbed_Batch_Mask = dict(Batch_Mask)
+        Perturbed_Batch_Mask["attention_j"] = Perturbed_Batch_Mask["attention_j"].detach().clone()
+        Perturbed_Batch_Mask["attention_j"] = Perturbed_Batch_Mask["attention_j"][:,torch.randperm(Perturbed_Batch_Mask["attention_j"].shape[1])]
+
+        false_locals_permuted = self.Site_DIM.inference(Site_Features,Interaction_Features,Attention_Mask,Perturbed_Batch_Mask).detach().clone()
+
+        engineered_false_locals_list = [false_locals_composition,false_locals_structure,false_locals_permuted]
+
+        #Perform global DIM
+        Global_Embedding_Features,Global_DIM_loss,Global_KL_loss = self.Global_DIM(Local_Environment_Features.detach().clone(),engineered_false_locals_list,Batch_Mask,KL=KL)
         #Global_Embedding_Features,Global_DIM_loss,Global_KL_loss = self.Global_DIM(Local_Environment_Features.detach().clone(),Batch_Mask,KL=KL)
         Recon_Composition = self.Composition_Decoder(Global_Embedding_Features).clamp(0)
         Recon_Composition = Recon_Composition/(torch.sum(Recon_Composition,dim=1).unsqueeze(1).repeat(1,103)+10e-6)
@@ -590,6 +608,37 @@ class SiteNet_DIM_supervisedcontrol(SiteNet_DIM):
         self.freeze = freeze
         self.last_layer = nn.Sequential(nn.Linear(config["post_pool_layers"][-1],64),nn.Mish(),nn.Linear(64,1))
 
+    #Inference mode, return the prediction
+    def forward(self, b, batch_size=16,return_truth = False):
+        with torch.no_grad():  
+            self.eval()
+            lob = [b[i : min(i + batch_size,len(b))] for i in range(0, len(b), batch_size)]
+            Encoding_list = []
+            targets_list= []
+            print("Inference in batches of %s" % batch_size)
+            for inference_batch in tqdm(lob):
+                batch_dictionary = collate_fn(inference_batch,inference=True)
+
+                Attention_Mask = batch_dictionary["Attention_Mask"].to(self.device)
+                Site_Features = batch_dictionary["Site_Feature_Tensor"].to(self.device)*self.site_label_scalers
+                Atomic_ID = batch_dictionary["Atomic_ID"].to(self.device)
+                Interaction_Features = batch_dictionary["Interaction_Feature_Tensor"].to(self.device)
+                Oxidation_State = batch_dictionary["Oxidation_State"].to(self.device)
+                Batch_Mask = {i:j.to(self.device) for i,j in batch_dictionary["Batch_Mask"].items()}
+                
+                Site_Features = self.input_handler(Atomic_ID, [Site_Features, Oxidation_State])
+                Local_Environment_Features = self.Site_DIM.inference(Site_Features, Interaction_Features, Attention_Mask, Batch_Mask)
+                Global_Embedding_Features = self.Global_DIM.inference(Local_Environment_Features.detach().clone(),Batch_Mask)
+                Prediction = self.last_layer(Global_Embedding_Features)
+                Encoding_list.append(Prediction)
+                targets_list.append(batch_dictionary["target"])
+            Encoding = torch.cat(Encoding_list, dim=0)
+            targets = torch.cat(targets_list, dim=0)
+            if return_truth:
+                return [Encoding,targets]
+            else:
+                return Encoding
+
     def training_step(self, batch_dictionary, batch_dictionary_idx):
         self.train()
         opt = self.optimizers()
@@ -615,7 +664,7 @@ class SiteNet_DIM_supervisedcontrol(SiteNet_DIM):
             Global_Embedding_Features = self.Global_DIM.inference(Local_Environment_Features,Batch_Mask)
         
 
-        Prediction = self.decoder(Global_Embedding_Features)
+        Prediction = self.last_layer(Global_Embedding_Features)
         MSE = torch.square(Prediction.flatten() - batch_dictionary["target"].flatten()).mean()
         self.manual_backward(MSE)
         opt.step()
@@ -635,7 +684,7 @@ class SiteNet_DIM_supervisedcontrol(SiteNet_DIM):
         Site_Features = self.input_handler(Atomic_ID, [Site_Features, Oxidation_State])
         Local_Environment_Features = self.Site_DIM.inference(Site_Features, Interaction_Features, Attention_Mask, Batch_Mask)
         Global_Embedding_Features = self.Global_DIM.inference(Local_Environment_Features,Batch_Mask)
-        Prediction = self.decoder(Global_Embedding_Features)
+        Prediction = self.last_layer(Global_Embedding_Features)
         MAE = torch.abs(Prediction.flatten() - batch_dictionary["target"].flatten()).mean()
         return [MAE]
     
@@ -655,6 +704,8 @@ class SiteNet_DIM_supervisedcontrol(SiteNet_DIM):
 
         return opt
 class SiteNet_DIM_regularisation(SiteNet_DIM):
+    
+
     #Makes sure the model is in training mode, passes a batch through the model, then back propogates
     def training_step(self, batch_dictionary, batch_dictionary_idx):
         self.train()

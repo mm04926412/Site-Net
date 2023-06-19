@@ -19,29 +19,36 @@ import argparse
 from compress_pickle import dump, load
 import collections.abc as container_abcs
 from pytorch_lightning.callbacks import ModelCheckpoint
+import torch
 
 compression_alg = "gzip"
 
 def train_model(config, Dataset):
+    model = SiteNet_DIM_supervisedcontrol(config=config, freeze=args.freeze)
     if args.starting_model != None:
-        print("Initializing from checkpoint " + args.starting_model)
-        resume_from_checkpoint = args.starting_model
+        model.load_state_dict(torch.load(DIM_model_dict[args.starting_model],map_location=torch.device("cpu"))["state_dict"], strict=False)
+        for layer in model.last_layer:
+            if hasattr(layer, 'reset_parameters'):
+                layer.reset_parameters()
     if int(args.load_checkpoint) == 1:
         print(config["h5_file"])
-        resume_from_checkpoint = args.fold_name + str(config["label"]) + ".ckpt"
+        resume_from_checkpoint = "Data/Matbench/downstream_models/" + args.fold_name + "_" + str(config["label"]) + ".ckpt"
+    #elif args.starting_model != None:
+    #   print("Initializing from checkpoint " + DIM_model_dict[args.starting_model])
+    #   resume_from_checkpoint = DIM_model_dict[args.starting_model]
     else:
         resume_from_checkpoint = None
     checkpoint_callback = ModelCheckpoint(
     monitor="avg_val_loss_task",
     dirpath="",
-    filename=args.fold_name + "_best_" + str(config["label"]),
+    filename="Data/Matbench/downstream_models/" + args.fold_name + "_" + "best_" + str(config["label"]),
     save_top_k=1,
     mode="min",
 )
     trainer = pl.Trainer(
         gpus=int(args.num_gpus),
         callbacks=[
-            basic_callbacks(filename=args.fold_name + str(config["label"])),
+            basic_callbacks(filename="Data/Matbench/downstream_models/" + args.fold_name + "_"  + str(config["label"])),
             checkpoint_callback
         ],
         **config["Trainer kwargs"],
@@ -54,7 +61,6 @@ def train_model(config, Dataset):
         #amp_level="O2",
         resume_from_checkpoint=resume_from_checkpoint,
     )
-    model = SiteNet_DIM_supervisedcontrol(config=config, freeze=args.freeze)
     trainer.fit(model, Dataset)
 
 
@@ -78,6 +84,15 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
+    dataset = {"eform":"Data/Matbench/matbench_mp_e_form_cubic_50_train_1.hdf5",
+               "egap":"Data/Matbench/matbench_mp_gap_cubic_50_train_1.hdf5",
+               "phonons":"Data/Matbench/matbench_phonons_cubic_500_train_1.hdf5"}
+
+    DIM_model_dict = {"DIM_egap":"Data/Matbench/matbench_mp_gap_cubic_50_train_1.hdf5_best_compact_dim_nocomp_klnorm_DIM.ckpt",
+                      "DIM_eform":"Data/Matbench/matbench_mp_e_form_cubic_50_train_1.hdf5_best_compact_dim_nocomp_klnorm_DIM-v2.ckpt",
+                      "Supervised_egap":"Data/Matbench/downstream_models/egap_best_compact_dim_sall_initial_downstream_Neither_1.ckpt",
+                      "Supervised_eform":"Data/Matbench/downstream_models/eform_best_compact_dim_sall_initial_downstream_Neither_1.ckpt"}
+
     if args.freeze not in ["Both","Local","Global","Neither"]:
         raise Exception("Invalid Freeze Argument")
     try:
@@ -89,13 +104,13 @@ if __name__ == "__main__":
         raise RuntimeError(
             "Config not found or unprovided, a configuration JSON path is REQUIRED to run"
         )
-    config["h5_file"] = args.fold_name
+    config["h5_file"] = dataset[args.fold_name]
     if args.starting_model != None:
-        config["label"] = config["label"] + "_DIM_downstream_" + args.freeze + "_" + args.starting_model
+        config["label"] = config["label"] + "_DIM_downstream_" + args.freeze + "_" + args.starting_model  + "_" + args.dataseed
     else:
-        config["label"] = config["label"] + "_initial_downstream_" + args.freeze
+        config["label"] = config["label"] + "_initial_downstream_" + args.freeze + "_" + args.dataseed
     if bool(args.debug) == True:
-        config["Max_Samples"] = 1000
+        config["Max_Samples"] = 30
     if int(args.pickle) == 1:
         print("Loading Pickle")
         Dataset = load(open("db_pickle.pk", "rb"), compression=compression_alg)

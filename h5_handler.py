@@ -240,7 +240,6 @@ class Writer(Process):
                     self.f[next_task["Group_Name"]][next_task["Name"]][()] = next_task[
                         "Feature_Array"
                     ]
-                    print("overwrite")
                 self.task_queue.task_done()
         except KeyboardInterrupt as k:
             pass

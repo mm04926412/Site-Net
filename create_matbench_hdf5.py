@@ -196,11 +196,12 @@ if __name__ == "__main__":
     exec("task = MatbenchBenchmark()." + args.matbench_dataset)
     task.load()
     fold_n = 1
-    for fold in task.folds[:2]:
+    for fold in task.folds[:1]:
         #Get the data from matbench
         train_inputs, train_outputs = task.get_train_and_val_data(fold)
         test_inputs,test_outputs = task.get_test_data(fold,include_target=True)
+        
         #Process the pymatgen structures and generate hdf5 database for training
-        dataset_to_hdf5(train_inputs,train_outputs,h5_file_name + "_train",args.number_of_worker_processes,fold_n,supercell,supercell_size)
-        dataset_to_hdf5(test_inputs,test_outputs,h5_file_name + "_test",args.number_of_worker_processes,fold_n,supercell,supercell_size)        
+        dataset_to_hdf5(train_inputs[:1000],train_outputs[:1000],h5_file_name + "_DIMinference_train",args.number_of_worker_processes,fold_n,supercell,supercell_size)
+        dataset_to_hdf5(test_inputs[:1000],test_outputs[:1000],h5_file_name + "_DIMinference_test",args.number_of_worker_processes,fold_n,supercell,supercell_size)        
         fold_n += 1

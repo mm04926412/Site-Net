@@ -427,8 +427,7 @@ class SiteNetDIMGlobal(nn.Module):
     def forward(
         self,
         LocalEnvironment_Features,
-        false_comp_locals,
-        false_interaction_locals,
+        False_LocalEnvironment_Features,
         Batch_Mask,
         KL = False
     ):
@@ -443,7 +442,7 @@ class SiteNetDIMGlobal(nn.Module):
                 self.af(pre_pool_layer(LocalEnvironment_Features))
             )
         
-        #Apply the symettric aggregation function to get the global representation
+        #Apply the permutation invariant aggregation function to get the global representation
         if self.sym_func == "mean":
             Global_Representation = segment_csr(LocalEnvironment_Features,Batch_Mask["CSR"],reduce="mean")
         elif self.sym_func == "max":
@@ -469,18 +468,18 @@ class SiteNetDIMGlobal(nn.Module):
         else:
             Global_Representation_Sample = self.global_upscale_final_layer(self.global_upscale(Global_Representation))
         local_env_samples = self.localenv_upscale_final_layer(self.localenv_upscale(detached_LocalEnvironment_Features))
-        local_env_samples_wrong_comp = self.localenv_upscale_final_layer(self.localenv_upscale(false_comp_locals))
-        local_env_samples_wrong_interaction = self.localenv_upscale_final_layer(self.localenv_upscale(false_interaction_locals))
+        false_local_env_samples = [self.localenv_upscale_final_layer(self.localenv_upscale(i.detach().clone())) for i in False_LocalEnvironment_Features]
 
-        #Roll the batch mask to get false indicies
+        #Get the false scores for the engineered false samples
+        False_Scores = [F.softplus(torch.einsum("ik,ik->i",Global_Representation_Sample[Batch_Mask["COO"]],i)) for i in false_local_env_samples]
+
+        #Roll the batch mask to get the score for the false samples taken from other crystals
         False_Batch_Mask_COO = torch.roll(Batch_Mask["COO"],len(Batch_Mask["COO"])//2,0)
-
-        False_Score_1 = F.softplus(torch.einsum("ik,ik->i",Global_Representation_Sample[False_Batch_Mask_COO],local_env_samples))
-        False_Score_2 = F.softplus(torch.einsum("ik,ik->i",Global_Representation_Sample[Batch_Mask["COO"]],local_env_samples_wrong_comp))
-        False_Score_3 = F.softplus(torch.einsum("ik,ik->i",Global_Representation_Sample[Batch_Mask["COO"]],local_env_samples_wrong_interaction))
+        False_Scores.append(F.softplus(torch.einsum("ik,ik->i",Global_Representation_Sample[False_Batch_Mask_COO],local_env_samples)))
+        
         True_Score = F.softplus(-torch.einsum("ik,ik->i",Global_Representation_Sample[Batch_Mask["COO"]],local_env_samples))
         #Get DIM_loss per crystal
-        DIM_loss = segment_csr((False_Score_1+False_Score_2+False_Score_3)/3+True_Score,Batch_Mask["CSR"],reduce="mean").flatten().mean()
+        DIM_loss = segment_csr(sum(False_Scores)/len(False_Scores)+True_Score,Batch_Mask["CSR"],reduce="mean").flatten().mean()
         #DIM_loss = segment_csr(False_Score_1+True_Score,Batch_Mask["CSR"],reduce="mean").flatten().mean()
         if KL:
             KL_loss = (0.5*Global_Representation**2+torch.exp(Global_Representation_log_var)-Global_Representation_log_var).flatten().mean()

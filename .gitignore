@@ -6,12 +6,9 @@ lightning_logs/*/*
 *.png
 *.ckpt
 *.tar.gz
-*.ipynb
 *.local.yaml
 *.local
 .vscode*
-*.sh
-*sh*
 inference_job.sh
 *.err
 *.out

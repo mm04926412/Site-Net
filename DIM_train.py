@@ -81,7 +81,7 @@ if __name__ == "__main__":
     config["h5_file"] = args.fold_name
     config["label"] = config["label"] + "_DIM"
     if bool(args.debug) == True:
-        config["Max_Samples"] = 1000
+        config["Max_Samples"] = 30
     if int(args.pickle) == 1:
         print("Loading Pickle")
         Dataset = load(open("db_pickle.pk", "rb"), compression=compression_alg)
