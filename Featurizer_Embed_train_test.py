@@ -8,10 +8,10 @@ import yaml
 from pytorch_lightning.callbacks import *
 import argparse
 import os
-os.environ["export MKL_NUM_THREADS"] = "1"
-os.environ["export NUMEXPR_NUM_THREADS"] = "1"
-os.environ["export OMP_NUM_THREADS"] = "1"
-os.environ["export OPENBLAS_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["NUMEXPR_NUM_THREADS"] = "1"
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
 import torch
 import pandas as pd
 from scipy import stats
@@ -37,7 +37,7 @@ os.environ["export NUMEXPR_NUM_THREADS"] = "1"
 os.environ["export OMP_NUM_THREADS"] = "1"
 os.environ["export OPENBLAS_NUM_THREADS"] = "1"
 from matminer.featurizers.structure.bonding import BagofBonds
-from matminer.featurizers.structure.matrix import OrbitalFieldMatrix
+from matminer.featurizers.structure.matrix import OrbitalFieldMatrix,SineCoulombMatrix
 #monkeypatches
 
 compression_alg = "gzip"
@@ -163,58 +163,104 @@ if __name__ == "__main__":
     parser.add_argument("-w", "--number_of_worker_processes", default=1,type=int)
     parser.add_argument("-c", "--config", default=None)
     parser.add_argument("-u", "--cell_size_limit", default = None )
+    parser.add_argument("-l", "--load_from_cache", default = False)
+    parser.add_argument("-f","--featurizer",default=None)
+    parser.add_argument("-d","--dataset",default=None)
+
+    datasets = {"egap":{"train":"Data/Matbench/matbench_mp_gap_cubic_50_train_1.hdf5","test":"Data/Matbench/matbench_mp_gap_cubic_50_test_1.hdf5"},
+                "eform":{"train":"Data/Matbench/matbench_mp_e_form_cubic_50_train_1.hdf5","test":"Data/Matbench/matbench_mp_e_form_cubic_50_test_1.hdf5"}}
+    
+    featurizers = {"orbital":OrbitalFieldMatrix(period_tag=True),
+                   "jarvis":JarvisCFID(use_cell=False,use_chg=False,use_adf=False,use_ddf=False,use_nn=False),
+                   "xray":XRDPowderPattern()}
+
     args = parser.parse_args()
     args.cell_size_limit = int(args.cell_size_limit)
 
-    limits = [100,1000]
-    repeats = [10,10]
+    limits = [10,50,100,250,1000,10000]
+    repeats = [100,100,100,25,10,5]
 
     results_dataframe = pd.DataFrame(columns = ["rf_R2","rf_MAE","rf_MSE","nn_R2","nn_MAE","nn_MSE","lin_R2","lin_MAE","lin_MSE","model","limit","measure"])
-
-    train_data_dict = {"e_form":"Data/Matbench/matbench_mp_e_form_cubic_50_train_1.hdf5","e_gap":"Data/Matbench/matbench_mp_gap_cubic_50_train_1.hdf5"}
-    test_data_dict = {"e_form":"Data/Matbench/matbench_mp_e_form_cubic_50_test_1.hdf5","e_gap":"Data/Matbench/matbench_mp_gap_cubic_50_test_1.hdf5"}
 
     with open(str(args.config), "r") as config_file:
         config = yaml.load(config_file)
     config["dynamic_batch"] = False
     config["Batch_Size"] = 128
-    config["Max_Samples"] = 1000
-    config["h5_file"] = "Data/Matbench/matbench_mp_e_form_cubic_50_train_1.hdf5"
-    eform_train = DIM_h5_Data_Module(
-            config,
-            max_len=args.cell_size_limit,
-            ignore_errors=True,
-            overwrite=False,
-            cpus=args.number_of_worker_processes,
-            chunk_size=32,
-        )
-    config["Max_Samples"] = 1000
-    config["h5_file"] = "Data/Matbench/matbench_mp_e_form_cubic_50_test_1.hdf5"
-    eform_test = DIM_h5_Data_Module(
-            config,
-            max_len=args.cell_size_limit,
-            ignore_errors=True,
-            overwrite=False,
-            cpus=args.number_of_worker_processes,
-            chunk_size=32,
-        )
+    config["Max_Samples"] = 1000000
+    config["h5_file"] = datasets[args.dataset]["train"]
+    if not bool(args.load_from_cache):
+        train_data = DIM_h5_Data_Module(
+                config,
+                max_len=args.cell_size_limit,
+                ignore_errors=True,
+                overwrite=False,
+                cpus=args.number_of_worker_processes,
+                chunk_size=32,
+            )
+    config["Max_Samples"] = 1000000
+    config["h5_file"] = datasets[args.dataset]["test"]
+    if not bool(args.load_from_cache):
+        test_data = DIM_h5_Data_Module(
+                config,
+                max_len=args.cell_size_limit,
+                ignore_errors=True,
+                overwrite=False,
+                cpus=args.number_of_worker_processes,
+                chunk_size=32,
+            )
     
     results_dataframe = pd.DataFrame(columns = ["rf_R2","rf_MAE","rf_MSE","nn_R2","nn_MAE","nn_MSE","lin_R2","lin_MAE","lin_MSE","model","limit","measure"])
-    featurizer = OrbitalFieldMatrix()
 
-    print("Featurizing Training Data")
-    pool = Pool(32)
-    training_features_full = np.array(pool.map(featurizer.featurize,tqdm([i["structure"] for i in eform_train.Dataset])))
-    training_labels_full = np.array([i["target"] for i in eform_train.Dataset])
-    pool.close()
-    pool.join()
+    class wrapped_featurizer():
+        def __init__(self,featurizer):
+            self.featurizer = featurizer
+        def featurize(self,structure):
+            try:
+                return self.featurizer.featurize(structure)
+            except Exception as E:
+                print(E)
+                return None
+    
+    featurizer = wrapped_featurizer(OrbitalFieldMatrix(period_tag=True))
 
-    print("Featurizing Test Data")
-    pool = Pool(32)
-    test_features_full = np.array(pool.map(featurizer.featurize,tqdm([i["structure"] for i in eform_test.Dataset])))
-    test_labels_full = np.array([i["target"] for i in eform_test.Dataset])
-    pool.close()
-    pool.join()
+    if bool(args.load_from_cache):
+        print("Loading Training Data From Cache")
+        file = open("featurizer_pickles/" + args.dataset + args.featurizer + '_feat_features_downstream_train_cache.pk', 'rb')
+        training_features_full = pk.load(file)
+        file = open("featurizer_pickles/" + args.dataset + args.featurizer + '_feat_labels_downstream_train_cache.pk', 'rb')
+        training_labels_full = pk.load(file)
+    else:
+        print("Featurizing Training Data")
+        pool = Pool(32)
+        training_features_full = pool.map(featurizer.featurize,tqdm([i["structure"] for i in train_data.Dataset]))
+        pool.close()
+        pool.join()
+        training_labels_full = np.array([i["target"] for i,j in zip(train_data.Dataset,training_features_full) if j is not None])
+        training_features_full = np.array([i for i in training_features_full if i is not None])
+        file = open("featurizer_pickles/" + args.dataset + args.featurizer + '_feat_features_downstream_train_cache.pk', 'wb')
+        pk.dump(training_features_full,file)
+        file = open("featurizer_pickles/" + args.dataset + args.featurizer + '_feat_labels_downstream_train_cache.pk', 'wb')
+        pk.dump(training_labels_full,file)
+
+    if bool(args.load_from_cache):
+        print("Loading Test Data From Cache")
+        file = open("featurizer_pickles/" + args.dataset + args.featurizer + '_feat_features_downstream_test_cache.pk', 'rb')
+        test_features_full = pk.load(file)
+        file = open("featurizer_pickles/" + args.dataset + args.featurizer + '_feat_labels_downstream_test_cache.pk', 'rb')
+        test_labels_full = pk.load(file)
+    else:
+        print("Featurizing Test Data")
+        pool = Pool(32)
+        test_features_full = pool.map(featurizer.featurize,tqdm([i["structure"] for i in test_data.Dataset]))
+        pool.close()
+        pool.join()
+        test_labels_full = np.array([i["target"] for i,j in zip(test_data.Dataset,test_features_full) if j is not None])
+        test_features_full = np.array([i for i in test_features_full if i is not None])
+        file = open("featurizer_pickles/" + args.dataset + args.featurizer + '_feat_features_downstream_test_cache.pk', 'wb')
+        pk.dump(test_features_full,file)
+        file = open("featurizer_pickles/" + args.dataset + args.featurizer + '_feat_labels_downstream_test_cache.pk', 'wb')
+        pk.dump(test_labels_full,file)
+
 
     print("Featurized!")
 
@@ -223,6 +269,7 @@ if __name__ == "__main__":
         rows = pd.DataFrame(columns = ["rf_R2","rf_MAE","rf_MSE","nn_R2","nn_MAE","nn_MSE","lin_R2","lin_MAE","lin_MSE"])
         for i,sample in enumerate(training_features_samples):
             print(i)
+
             rf = RandomForestRegressor().fit(training_features_full[sample,:], training_labels_full[sample])
             nn = MLPRegressor(hidden_layer_sizes=64, max_iter=5000).fit(training_features_full[sample,:], training_labels_full[sample])
             lin = LinearRegression().fit(training_features_full[sample,:], training_labels_full[sample])
@@ -240,8 +287,8 @@ if __name__ == "__main__":
             },
             index=[str(i)]))
         
-        rows["model"] = "eform_OrbitalFieldMatrix"
+        rows["model"] = args.dataset + "_" + args.featurizer
         rows["limit"] = limit
         results_dataframe = results_dataframe.append(rows, ignore_index=True)
         print(results_dataframe)
-        results_dataframe.to_csv("Downstream_Featurized.csv")  
+        results_dataframe.to_csv("featurizer_pickles/" + args.dataset + args.featurizer + "_Downstream_Featurized.csv")  
