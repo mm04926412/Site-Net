@@ -59,7 +59,7 @@ if __name__ == "__main__":
                         ["nocomp_klnorm_moremultiloss_egap","config/compact_dim_nocomp_klnorm.yaml","Data/Matbench/matbench_mp_gap_cubic_50_train_1.hdf5_best_compact_dim_nocomp_klnorm_DIM.ckpt","e_gap"],
                         #["nonorm","config/compact_dim_nonorm.yaml","Data/Matbench/matbench_mp_e_form_cubic_50_train_1.hdf5_best_compact_dim_nonorm_DIM-v2.ckpt","e_form"],
                         #["nocomp","config/compact_dim_nocomp.yaml","Data/Matbench/matbench_mp_e_form_cubic_50_train_1.hdf5_best_compact_dim_nocomp_DIM.ckpt","e_form"],
-                        ["klnorm_eform","config/compact_dim_klnorm.yaml","Data/Matbench/matbench_mp_e_form_cubic_50_train_1.hdf5_best_compact_dim_klnorm_DIM.ckpt","e_form"],
+                        #["klnorm_eform","config/compact_dim_klnorm.yaml","Data/Matbench/matbench_mp_e_form_cubic_50_train_1.hdf5_best_compact_dim_klnorm_DIM.ckpt","e_form"],
                         #["doublenorm","config/compact_dim_doublenorm.yaml","Data/Matbench/matbench_mp_e_form_cubic_50_train_1.hdf5_best_compact_dim_doublenorm_DIM.ckpt","e_form"],
                         #["adversarialnorm","config/compact_dim_adversarialnorm.yaml","Data/Matbench/matbench_mp_e_form_cubic_50_train_1.hdf5_best_compact_dim_adversarialnorm_DIM.ckpt","e_form"],
                         #["localonly","config/compact_dim_localonly.yaml","Data/Matbench/matbench_mp_e_form_cubic_50_train_1.hdf5_best_compact_dim_localonly_DIM.ckpt","e_form"],
@@ -72,7 +72,8 @@ if __name__ == "__main__":
     #config_and_model = [["klnorm_multiloss","config/compact_dim_klnorm.yaml","Data/Matbench/matbench_mp_e_form_cubic_50_train_1.hdf5_best_compact_dim_klnorm_DIM-v2.ckpt"]]
 
     limits = [10, 50, 100, 250, 1000, 10000]
-    repeats = [100, 100, 100, 25, 10, 5]
+    repeats = [1000,500,100,50,10,5]
+    #repeats = [1000, 250, 100, 25, 10, 5]
 
     results_dataframe = pd.DataFrame(columns = ["rf_R2","rf_MAE","rf_MSE","nn_R2","nn_MAE","nn_MSE","lin_R2","lin_MAE","lin_MSE","model","limit","measure"])
 
@@ -94,7 +95,7 @@ if __name__ == "__main__":
         results_list = []
         model_name = cm[2]
         dataset_name = train_data_dict[cm[3]] #Get train dataset according to training target
-        #config["Max_Samples"] = 100
+        config["Max_Samples"] = 100
         config["h5_file"] = dataset_name
         config["dynamic_batch"] = False
         config["Batch_Size"] = 128
@@ -133,6 +134,13 @@ if __name__ == "__main__":
         results_y = np.array([Dataset.Dataset[i]["target"] for i in range(len(Dataset.Dataset))])
         results_Test = model.forward(Dataset_Test.Dataset,batch_size=128).detach().cpu().numpy()
         results_test_y = np.array([Dataset_Test.Dataset[i]["target"] for i in range(len(Dataset_Test.Dataset))])
+
+        results_test_tsne = TSNE(init="pca",perplexity=1000,learning_rate="auto").fit_transform(results_Test)
+        results_test_tsne = pd.DataFrame(results_test_tsne)
+        results_test_tsne = results_test_tsne
+        results_test_tsne["structure"] = [pk.dumps(Dataset_Test.Dataset[i]["structure"]) for i in range(len(Dataset_Test.Dataset))]
+        results_test_tsne.to_csv("TSNE_" + cm[0] + ".csv")
+
         for limit,repeat in zip(limits,repeats):
             print("Limit is " + str(limit))
             samples = [np.random.choice(np.arange(len(Dataset.Dataset)), size=min(limit,len(Dataset.Dataset)), replace=False) for i in range(repeat)]
@@ -159,42 +167,3 @@ if __name__ == "__main__":
             rows["limit"] = limit
             results_dataframe = results_dataframe.append(rows, ignore_index=True)
             results_dataframe.to_csv("Downstream_DIM.csv")  
-
-
-""" 
-            stds = rows.std(ddof=0)
-            stds["model"] = cm[0]
-            stds["limit"] = limit
-            stds["measure"] = "STD"
-            results_dataframe = results_dataframe.append(stds, ignore_index=True)
-
-            medians = rows.median()
-            medians["model"] = cm[0]
-            medians["limit"] = limit
-            medians["measure"] = "Median"
-            results_dataframe = results_dataframe.append(medians, ignore_index=True)
-
-            mins = rows.min()
-            mins["model"] = cm[0]
-            mins["limit"] = limit
-            mins["measure"] = "Min"
-            results_dataframe = results_dataframe.append(mins, ignore_index=True)
-
-            maxes = rows.max()
-            maxes["model"] = cm[0]
-            maxes["limit"] = limit
-            maxes["measure"] = "Max"
-            results_dataframe = results_dataframe.append(maxes, ignore_index=True)
-
-            lowerquantile = rows.quantile(q=0.25)
-            lowerquantile["model"] = cm[0]
-            lowerquantile["limit"] = limit
-            lowerquantile["measure"] = "LowQ"
-            results_dataframe = results_dataframe.append(lowerquantile, ignore_index=True)
-
-            upperquantile = rows.quantile(q=0.75)
-            upperquantile["model"] = cm[0]
-            upperquantile["limit"] = limit
-            upperquantile["measure"] = "UpQ"
-            results_dataframe = results_dataframe.append(upperquantile, ignore_index=True)
-"""
