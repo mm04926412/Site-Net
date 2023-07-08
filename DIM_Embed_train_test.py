@@ -95,7 +95,7 @@ if __name__ == "__main__":
         results_list = []
         model_name = cm[2]
         dataset_name = train_data_dict[cm[3]] #Get train dataset according to training target
-        config["Max_Samples"] = 100
+        #config["Max_Samples"] = 100
         config["h5_file"] = dataset_name
         config["dynamic_batch"] = False
         config["Batch_Size"] = 128
