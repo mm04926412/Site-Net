@@ -221,7 +221,7 @@ if __name__ == "__main__":
                 print(E)
                 return None
     
-    featurizer = wrapped_featurizer(OrbitalFieldMatrix(period_tag=True))
+    featurizer = wrapped_featurizer(featurizers[args.featurizer])
 
     if bool(args.load_from_cache):
         print("Loading Training Data From Cache")
@@ -231,7 +231,7 @@ if __name__ == "__main__":
         training_labels_full = pk.load(file)
     else:
         print("Featurizing Training Data")
-        pool = Pool(32)
+        pool = Pool(args.number_of_worker_processes)
         training_features_full = pool.map(featurizer.featurize,tqdm([i["structure"] for i in train_data.Dataset]))
         pool.close()
         pool.join()
@@ -250,7 +250,7 @@ if __name__ == "__main__":
         test_labels_full = pk.load(file)
     else:
         print("Featurizing Test Data")
-        pool = Pool(32)
+        pool = Pool(args.number_of_worker_processes)
         test_features_full = pool.map(featurizer.featurize,tqdm([i["structure"] for i in test_data.Dataset]))
         pool.close()
         pool.join()
@@ -263,16 +263,30 @@ if __name__ == "__main__":
 
 
     print("Featurized!")
+    print(limits,repeats)
+
+    from sklearn.pipeline import make_pipeline
+    from sklearn.preprocessing import StandardScaler
 
     for limit,iterations in zip(limits,repeats):
+        print(limit,iterations)
         training_features_samples = [np.random.choice(np.arange(len(training_features_full)), size=min(limit,len(training_features_full)), replace=False) for i in range(iterations)]
         rows = pd.DataFrame(columns = ["rf_R2","rf_MAE","rf_MSE","nn_R2","nn_MAE","nn_MSE","lin_R2","lin_MAE","lin_MSE"])
         for i,sample in enumerate(training_features_samples):
-            print(i)
-
-            rf = RandomForestRegressor().fit(training_features_full[sample,:], training_labels_full[sample])
-            nn = MLPRegressor(hidden_layer_sizes=64, max_iter=5000).fit(training_features_full[sample,:], training_labels_full[sample])
-            lin = LinearRegression().fit(training_features_full[sample,:], training_labels_full[sample])
+            if args.dataset == "jarvis":
+                rf = make_pipeline(StandardScaler(),RandomForestRegressor())
+                rf.fit(training_features_full[sample,:], training_labels_full[sample])
+                nn = make_pipeline(StandardScaler(),MLPRegressor(hidden_layer_sizes=64, max_iter=5000))
+                nn.fit(training_features_full[sample,:], training_labels_full[sample])
+                lin = make_pipeline(StandardScaler(),LinearRegression())
+                lin.fit(training_features_full[sample,:], training_labels_full[sample])
+            else:
+                rf = RandomForestRegressor()
+                rf.fit(training_features_full[sample,:], training_labels_full[sample])
+                nn = MLPRegressor(hidden_layer_sizes=64, max_iter=5000)
+                nn.fit(training_features_full[sample,:], training_labels_full[sample])
+                lin = LinearRegression()
+                lin.fit(training_features_full[sample,:], training_labels_full[sample])
 
             rows = rows.append(pd.DataFrame({
                 "rf_R2": rf.score(test_features_full, test_labels_full),

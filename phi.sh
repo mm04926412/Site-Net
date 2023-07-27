@@ -4,7 +4,7 @@
 # Use the current environment for this job
 #SBATCH --export=ALL
 # Define job name
-#SBATCH -J xrayeform
+#SBATCH -J jarvisgap
 # Define a standard output file. When the job is running, %N will be replaced by the name of 
 # the first node where the job runs, %j will be replaced by job id number.
 #SBATCH -o %N%j.out
@@ -58,7 +58,7 @@ export MKL_NUM_THREADS=1
 export OPENBLAS_NUM_THREADS=1
 
 
-python Featurizer_Embed_train_test.py -c config/compact_dim_sall.yaml -u 50 -w $SLURM_NTASKS -f xray -d eform
+python Featurizer_Embed_train_test.py -c config/compact_dim_sall.yaml -u 50 -w $SLURM_NTASKS -f jarvis -d egap -l 1
 
 date_end=`date +%s`
 seconds=$((date_end-date_start))
