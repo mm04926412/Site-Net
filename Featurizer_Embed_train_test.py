@@ -178,7 +178,7 @@ if __name__ == "__main__":
     args.cell_size_limit = int(args.cell_size_limit)
 
     limits = [10,50,100,250,1000,10000]
-    repeats = [100,100,100,25,10,5]
+    repeats = [100,100,100,100,100,10]
 
     results_dataframe = pd.DataFrame(columns = ["rf_R2","rf_MAE","rf_MSE","nn_R2","nn_MAE","nn_MSE","lin_R2","lin_MAE","lin_MSE","model","limit","measure"])
 

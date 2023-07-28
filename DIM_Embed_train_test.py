@@ -71,8 +71,8 @@ if __name__ == "__main__":
 
     #config_and_model = [["klnorm_multiloss","config/compact_dim_klnorm.yaml","Data/Matbench/matbench_mp_e_form_cubic_50_train_1.hdf5_best_compact_dim_klnorm_DIM-v2.ckpt"]]
 
-    limits = [10, 50, 100, 250, 1000, 10000]
-    repeats = [1000,500,100,50,10,5]
+    limits = [10, 50, 100, 250, 1000]
+    repeats = [1000,100,100,100,25]
     #repeats = [1000, 250, 100, 25, 10, 5]
 
     results_dataframe = pd.DataFrame(columns = ["rf_R2","rf_MAE","rf_MSE","nn_R2","nn_MAE","nn_MSE","lin_R2","lin_MAE","lin_MSE","model","limit","measure"])
@@ -139,6 +139,7 @@ if __name__ == "__main__":
         results_test_tsne = pd.DataFrame(results_test_tsne)
         results_test_tsne = results_test_tsne
         results_test_tsne["structure"] = [pk.dumps(Dataset_Test.Dataset[i]["structure"]) for i in range(len(Dataset_Test.Dataset))]
+        results_test_tsne["target"] = [Dataset_Test.Dataset[i]["target"] for i in range(len(Dataset_Test.Dataset))]
         results_test_tsne.to_csv("TSNE_" + cm[0] + ".csv")
 
         for limit,repeat in zip(limits,repeats):
