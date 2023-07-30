@@ -37,6 +37,8 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.neural_network import MLPRegressor
 from sklearn.linear_model import LinearRegression,ElasticNet
 import pickle as pk
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
 #monkeypatches
 
 compression_alg = "gzip"
@@ -71,8 +73,8 @@ if __name__ == "__main__":
 
     #config_and_model = [["klnorm_multiloss","config/compact_dim_klnorm.yaml","Data/Matbench/matbench_mp_e_form_cubic_50_train_1.hdf5_best_compact_dim_klnorm_DIM-v2.ckpt"]]
 
-    limits = [10, 50, 100, 250, 1000]
-    repeats = [1000,100,100,100,25]
+    limits = [50, 100, 250, 1000]
+    repeats = [100,100,100,25]
     #repeats = [1000, 250, 100, 25, 10, 5]
 
     results_dataframe = pd.DataFrame(columns = ["rf_R2","rf_MAE","rf_MSE","nn_R2","nn_MAE","nn_MSE","lin_R2","lin_MAE","lin_MSE","model","limit","measure"])
@@ -147,10 +149,16 @@ if __name__ == "__main__":
             samples = [np.random.choice(np.arange(len(Dataset.Dataset)), size=min(limit,len(Dataset.Dataset)), replace=False) for i in range(repeat)]
             rows = pd.DataFrame(columns = ["rf_R2","rf_MAE","rf_MSE","nn_R2","nn_MAE","nn_MSE","lin_R2","lin_MAE","lin_MSE"])
             for i,sample in enumerate(samples):
-                rf = RandomForestRegressor().fit(results[sample,:], results_y[sample])
-                nn = MLPRegressor(hidden_layer_sizes=64, max_iter=5000).fit(results[sample,:], results_y[sample])
-                lin = LinearRegression().fit(results[sample,:], results_y[sample])
-
+                if cm[2] is None:
+                    print("Normalizing untrained model inputs")
+                    rf = make_pipeline(StandardScaler(),RandomForestRegressor()).fit(results[sample,:], results_y[sample])
+                    nn = make_pipeline(StandardScaler(),MLPRegressor(hidden_layer_sizes=[64], max_iter=5000)).fit(results[sample,:], results_y[sample])
+                    lin = make_pipeline(StandardScaler(),LinearRegression()).fit(results[sample,:], results_y[sample])
+                else:
+                    print("Do not normalize trained latent space")
+                    rf = RandomForestRegressor().fit(results[sample,:], results_y[sample])
+                    nn = MLPRegressor(hidden_layer_sizes=[64], max_iter=5000).fit(results[sample,:], results_y[sample])
+                    lin = LinearRegression().fit(results[sample,:], results_y[sample])
                 rows = rows.append(pd.DataFrame({
                     "rf_R2": rf.score(results_Test, results_test_y),
                     "rf_MAE":np.mean(np.absolute(rf.predict(results_Test)-results_test_y)),
