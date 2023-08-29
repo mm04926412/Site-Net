@@ -171,7 +171,7 @@ if __name__ == "__main__":
                 "eform":{"train":"Data/Matbench/matbench_mp_e_form_cubic_50_train_1.hdf5","test":"Data/Matbench/matbench_mp_e_form_cubic_50_test_1.hdf5"}}
     
     featurizers = {"orbital":OrbitalFieldMatrix(period_tag=True),
-                   "jarvis":JarvisCFID(use_cell=False,use_chg=False,use_adf=False,use_ddf=False,use_nn=False),
+                   "jarvis":JarvisCFID(use_cell=False, use_chem=True, use_chg=False, use_rdf=True, use_adf=False, use_ddf=False, use_nn=False),
                    "xray":XRDPowderPattern()}
 
     args = parser.parse_args()
@@ -186,7 +186,7 @@ if __name__ == "__main__":
         config = yaml.load(config_file)
     config["dynamic_batch"] = False
     config["Batch_Size"] = 128
-    config["Max_Samples"] = 1000000
+    config["Max_Samples"] = 1000000000
     config["h5_file"] = datasets[args.dataset]["train"]
     if not bool(args.load_from_cache):
         train_data = DIM_h5_Data_Module(
@@ -197,7 +197,7 @@ if __name__ == "__main__":
                 cpus=args.number_of_worker_processes,
                 chunk_size=32,
             )
-    config["Max_Samples"] = 1000000
+    config["Max_Samples"] = 1000000000
     config["h5_file"] = datasets[args.dataset]["test"]
     if not bool(args.load_from_cache):
         test_data = DIM_h5_Data_Module(

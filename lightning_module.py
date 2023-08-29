@@ -452,8 +452,10 @@ class SiteNet_DIM(pl.LightningModule):
             Perturbed_Batch_Mask["attention_j"] = Perturbed_Batch_Mask["attention_j"][:,torch.randperm(Perturbed_Batch_Mask["attention_j"].shape[1])]
 
             false_locals_permuted = self.Site_DIM.inference(Site_Features,Interaction_Features,Attention_Mask,Perturbed_Batch_Mask).detach().clone()
-
-            engineered_false_locals_list = [false_locals_composition,false_locals_structure,false_locals_permuted]
+            if self.config["extra_false_samples"] == True:
+                engineered_false_locals_list = [false_locals_composition,false_locals_structure,false_locals_permuted]
+            else:
+                engineered_false_locals_list = []
 
         #Perform global DIM
         Global_Embedding_Features,Global_DIM_loss,Global_KL_loss = self.Global_DIM(Local_Environment_Features.detach().clone(),engineered_false_locals_list,Batch_Mask,KL=KL)
@@ -529,7 +531,10 @@ class SiteNet_DIM(pl.LightningModule):
 
         false_locals_permuted = self.Site_DIM.inference(Site_Features,Interaction_Features,Attention_Mask,Perturbed_Batch_Mask).detach().clone()
 
-        engineered_false_locals_list = [false_locals_composition,false_locals_structure,false_locals_permuted]
+        if self.config["extra_false_samples"] == True:
+            engineered_false_locals_list = [false_locals_composition,false_locals_structure,false_locals_permuted]
+        else:
+            engineered_false_locals_list = []
 
         #Perform global DIM
         Global_Embedding_Features,Global_DIM_loss,Global_KL_loss = self.Global_DIM(Local_Environment_Features.detach().clone(),engineered_false_locals_list,Batch_Mask,KL=KL)

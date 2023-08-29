@@ -134,3 +134,6 @@ global_dot_hidden_layers:
 - 64
 global_dot_space: 128
 last_af_func: TReLU
+
+#Use the artifical false samples?
+extra_false_samples: True

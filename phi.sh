@@ -4,7 +4,7 @@
 # Use the current environment for this job
 #SBATCH --export=ALL
 # Define job name
-#SBATCH -J jarvisgap
+#SBATCH -J jarvisform
 # Define a standard output file. When the job is running, %N will be replaced by the name of 
 # the first node where the job runs, %j will be replaced by job id number.
 #SBATCH -o %N%j.out
@@ -35,7 +35,7 @@ export OMP_NUM_THREADS=1
 #module purge
 #module load apps/anaconda3/5.2.0
 #use source activate gpu to get the gpu virtual environment
-conda activate pytorch_2201
+conda activate SiteNet_Reproduction_Environment
 
 # List all modules
 module list
@@ -58,7 +58,7 @@ export MKL_NUM_THREADS=1
 export OPENBLAS_NUM_THREADS=1
 
 
-python Featurizer_Embed_train_test.py -c config/compact_dim_sall.yaml -u 50 -w $SLURM_NTASKS -f jarvis -d egap
+python Featurizer_Embed_train_test.py -c config/compact_dim_sall.yaml -u 50 -w $SLURM_NTASKS -f jarvis -d eform
 
 date_end=`date +%s`
 seconds=$((date_end-date_start))

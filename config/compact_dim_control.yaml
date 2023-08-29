@@ -1,4 +1,4 @@
-label: "compact_dim_nonorm"
+label: "compact_dim_control"
 
 ###############
 #Features used#
@@ -71,7 +71,7 @@ Site_Label_scalers: #Some properties are in different orders of magnitude and ne
 DIM_loss_global: 1.0
 Prior_loss_global: 0.0
 KL_loss_global: 0.0
-Composition_Loss: 1.0
+Composition_Loss: 0.0
 
 #Assign relative weights to the local deep infomax loss
 DIM_loss_local: 1.0
