@@ -16,3 +16,4 @@ inference_job.sh
 *.pk
 *.xlsx
 local_*
+!Data/Matbench/downstream_models/*
