@@ -15,4 +15,5 @@ inference_job.sh
 *.zip
 *.pk
 *.xlsx
+*.sh
 
