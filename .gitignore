@@ -15,5 +15,4 @@ inference_job.sh
 *.zip
 *.pk
 *.xlsx
-*.sh
-
+local_*
