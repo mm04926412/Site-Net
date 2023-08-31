@@ -54,22 +54,9 @@ if __name__ == "__main__":
     parser.add_argument("-u", "--cell_size_limit", default = None )
     args = parser.parse_args()
     config_and_model = [["Initial_eform","config/compact_dim_klnorm.yaml",None,"e_form"],
-                        #["klnorm_multiloss","config/compact_dim_klnorm.yaml","Data/Matbench/matbench_mp_e_form_cubic_50_train_1.hdf5_best_compact_dim_klnorm_DIM-v2.ckpt","e_form"],
-                        #["nocomp_klnorm_multiloss","config/compact_dim_nocomp_klnorm.yaml","Data/Matbench/matbench_mp_e_form_cubic_50_train_1.hdf5_best_compact_dim_nocomp_klnorm_DIM.ckpt","e_form"],
-                        ["nocomp_klnorm_moremultiloss_eform","config/compact_dim_nocomp_klnorm.yaml","Data/Matbench/matbench_mp_e_form_cubic_50_train_1.hdf5_best_compact_dim_nocomp_klnorm_DIM-v2.ckpt","e_form"],
                         ["Initial_egap","config/compact_dim_klnorm.yaml",None,"e_gap"],
+                        ["nocomp_klnorm_moremultiloss_eform","config/compact_dim_nocomp_klnorm.yaml","Data/Matbench/matbench_mp_e_form_cubic_50_train_1.hdf5_best_compact_dim_nocomp_klnorm_DIM-v2.ckpt","e_form"],
                         ["nocomp_klnorm_moremultiloss_egap","config/compact_dim_nocomp_klnorm.yaml","Data/Matbench/matbench_mp_gap_cubic_50_train_1.hdf5_best_compact_dim_nocomp_klnorm_DIM.ckpt","e_gap"],
-                        ["control_eform","config/compact_dim_control.yaml","Data/Matbench/matbench_mp_e_form_cubic_50_train_1.hdf5compact_dim_control_DIM.ckpt","e_form"],
-                        ["control_egap","config/compact_dim_control.yaml","Data/Matbench/matbench_mp_gap_cubic_50_train_1.hdf5compact_dim_control_DIM.ckpt","e_gap"],
-                        #["nocomp","config/compact_dim_nocomp.yaml","Data/Matbench/matbench_mp_e_form_cubic_50_train_1.hdf5_best_compact_dim_nocomp_DIM.ckpt","e_form"],
-                        #["klnorm_eform","config/compact_dim_klnorm.yaml","Data/Matbench/matbench_mp_e_form_cubic_50_train_1.hdf5_best_compact_dim_klnorm_DIM.ckpt","e_form"],
-                        #["doublenorm","config/compact_dim_doublenorm.yaml","Data/Matbench/matbench_mp_e_form_cubic_50_train_1.hdf5_best_compact_dim_doublenorm_DIM.ckpt","e_form"],
-                        #["adversarialnorm","config/compact_dim_adversarialnorm.yaml","Data/Matbench/matbench_mp_e_form_cubic_50_train_1.hdf5_best_compact_dim_adversarialnorm_DIM.ckpt","e_form"],
-                        #["localonly","config/compact_dim_localonly.yaml","Data/Matbench/matbench_mp_e_form_cubic_50_train_1.hdf5_best_compact_dim_localonly_DIM.ckpt","e_form"],
-                        #["onlycomp","config/compact_dim_onlycomp.yaml","Data/Matbench/matbench_mp_e_form_cubic_50_train_1.hdf5_best_compact_dim_onlycomp_DIM.ckpt","e_form"],
-                        #["control","config/compact_dim_nothing.yaml","Data/Matbench/matbench_mp_e_form_cubic_50_train_1.hdf5_best_compact_dim_nothing_DIM.ckpt","e_form"],
-                        #["control_cutoff5","config/compact_dim_nothing_cutoff5.yaml","Data/Matbench/matbench_mp_e_form_cubic_50_train_1.hdf5_best_compact_dim_nothing_cutoff5_DIM-v2.ckpt","e_form"],
-                        #["nonorm_cutoff5","config/compact_dim_nonorm_cutoff5.yaml","Data/Matbench/matbench_mp_e_form_cubic_50_train_1.hdf5_best_compact_dim_nonorm_cutoff5_DIM.ckpt","e_form"],
                         ]
 
     #config_and_model = [["klnorm_multiloss","config/compact_dim_klnorm.yaml","Data/Matbench/matbench_mp_e_form_cubic_50_train_1.hdf5_best_compact_dim_klnorm_DIM-v2.ckpt"]]

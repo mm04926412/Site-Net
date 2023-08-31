@@ -91,7 +91,8 @@ if __name__ == "__main__":
     DIM_model_dict = {"DIM_egap":"Data/Matbench/matbench_mp_gap_cubic_50_train_1.hdf5_best_compact_dim_nocomp_klnorm_DIM.ckpt",
                       "DIM_eform":"Data/Matbench/matbench_mp_e_form_cubic_50_train_1.hdf5_best_compact_dim_nocomp_klnorm_DIM-v2.ckpt",
                       "Supervised_egap":"Data/Matbench/downstream_models/egap_best_compact_dim_sall_initial_downstream_Neither_1.ckpt",
-                      "Supervised_eform":"Data/Matbench/downstream_models/eform_best_compact_dim_sall_initial_downstream_Neither_1.ckpt"}
+                      "Supervised_eform":"Data/Matbench/downstream_models/eform_best_compact_dim_sall_initial_downstream_Neither_1.ckpt",
+                      "none":None}
 
     if args.freeze not in ["Both","Local","Global","Neither"]:
         raise Exception("Invalid Freeze Argument")
