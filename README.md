@@ -6,7 +6,7 @@ A conda environment .yaml file has been included which will allow the constructi
 
 ##### conda env create -f sitenet_env.yaml
 
-For this file to resolve properly the channel priority on conda must be set to strict. For convinience, create_sitenet_env.sh has been provided. This .sh file will store the current value of the channel priority, set the channel priority to strict, and then revert it back to whatever the previous setting was after the environment is installed. By default the name of the virtual environment will be sitenet_env.yaml and can be activated with 
+For this file to resolve properly the channel priority on conda must be set to strict. For convinience, create_sitenet_env.sh has been provided. This .sh file will store the current value of the channel priority, set the channel priority to strict, and then revert it back to whatever the previous setting was after the environment is installed. By default the name of the virtual environment will be sitenet_env.yaml and can be activated with
 
 ##### conda activate sitenet_env
 
@@ -24,7 +24,7 @@ First generate the formation energy and band gap datasets with create_matbench_h
 
 ##### \--cubic_supercell generates a dataset of supercells
 
-##### -s \--supercell_size allows the size of the supercells to be specified 
+##### -s \--supercell_size allows the size of the supercells to be specified
 
 ##### -w \--number_of_worker_processes allows the number of cpu threads used to be specified (default 1)
 
@@ -45,24 +45,24 @@ Deep InfoMax models can be trained with DIM_train.py. This script trains a Deep 
 
 ### DIM_train.py arguments
 
-##### -c \--config allows the path of the configuration file to be specified (default None) 
+##### -c \--config allows the path of the configuration file to be specified (default None)
 
-##### -f \--h5_file_name allows the path of the h5 dataset used for training to be specified (default None) 
+##### -f \--h5_file_name allows the path of the h5 dataset used for training to be specified (default None)
 
-##### -l \--load_checkpoints allows training to be resumed from the most recent checkpoint for a given config file (default 0) 
+##### -l \--load_checkpoints allows training to be resumed from the most recent checkpoint for a given config file (default 0)
 
-##### -o \--overwrite will force the generation of new features, followed by overwriting, instead of reading them from the h5 file (default False) 
+##### -o \--overwrite will force the generation of new features, followed by overwriting, instead of reading them from the h5 file (default False)
 
-##### -n \--limit will limit the model to loading the first n samples, this is normally for debug purposes / test runs (default None) 
+##### -n \--limit will limit the model to loading the first n samples, this is normally for debug purposes / test runs (default None)
 
-##### -u \--unit_cell_limit will exclude unit cells larger than this size from training (default 100) 
+##### -u \--unit_cell_limit will exclude unit cells larger than this size from training (default 100)
 
 ##### -w \--number_of_worker_processes controls the maximum number of cpu threads that site-net will use (default 1)
 
 To reproduce the models used in this work run
 
-python DIM_train.py -c compact_dim_nocomp_klnorm.yaml -f Data/Matbench/matbench_mp_e_form_cubic_50_train_1.hdf5 -u 50 -w [number of cpu cores]
-python DIM_train.py -c compact_dim_nocomp_klnorm.yaml -f Data/Matbench/matbench_mp_gap_cubic_50_train_1.hdf5 -u 50 -w [number of cpu cores]
+python DIM_train.py -c config/compact_dim_nocomp_klnorm.yaml -f Data/Matbench/matbench_mp_e_form_cubic_50_train_1.hdf5 -u 50 -w [number of cpu cores]
+python DIM_train.py -c config/compact_dim_nocomp_klnorm.yaml -f Data/Matbench/matbench_mp_gap_cubic_50_train_1.hdf5 -u 50 -w [number of cpu cores]
 
 Tensorboard logs will be dumped to the lightning_logs folder, halt the model once the validation global DIM and local DIM loss scores have converged. Training can be resumed with -l 1 given the same arguments and configuration file.
 
@@ -74,15 +74,15 @@ In this step the supervised site-nets can be trained. This is performed with DIM
 
 ##### -c \--config allows the path of the configuration file to be specified (default None)
 
-##### -f \--h5_file_name allows the path of the h5 dataset used for training to be specified (default None) 
+##### -f \--h5_file_name allows the path of the h5 dataset used for training to be specified (default None)
 
-##### -l \--load_checkpoints allows training to be resumed from the most recent checkpoint for a given config file (default 0) 
+##### -l \--load_checkpoints allows training to be resumed from the most recent checkpoint for a given config file (default 0)
 
-##### -o \--overwrite will force the generation of new features, followed by overwriting, instead of reading them from the h5 file (default False) 
+##### -o \--overwrite will force the generation of new features, followed by overwriting, instead of reading them from the h5 file (default False)
 
-##### -n \--limit will limit the model to loading the first n samples, this is normally for debug purposes / test runs (default None) 
+##### -n \--limit will limit the model to loading the first n samples, this is normally for debug purposes / test runs (default None)
 
-##### -u \--unit_cell_limit will exclude unit cells larger than this size from training (default 100) 
+##### -u \--unit_cell_limit will exclude unit cells larger than this size from training (default 100)
 
 ##### -w \--number_of_worker_processes controls the maximum number of cpu threads that site-net will use (default 1)
 
@@ -105,7 +105,7 @@ Train sklearn models and get test MAEs on the DIM derived representations with D
 
 ### DIM_train_sklearn.py arguments
 
-##### -u \--unit_cell_limit will exclude unit cells larger than this size from training (default 100) 
+##### -u \--unit_cell_limit will exclude unit cells larger than this size from training (default 100)
 
 ##### -w \--number_of_worker_processes controls the maximum number of cpu threads that site-net will use (default 1)
 
@@ -117,7 +117,7 @@ Run predict_transfer_downstream.py to get the test MAEs for every supervised mod
 
 ##### -c \--config allows the path of the configuration file to be specified (default None)
 
-##### -n \--limit will limit the model to loading the first n samples, this is normally for debug purposes / test runs (default None) 
+##### -n \--limit will limit the model to loading the first n samples, this is normally for debug purposes / test runs (default None)
 
 ##### -w \--number_of_worker_processes controls the maximum number of cpu threads that site-net will use (default 1)
 
@@ -129,7 +129,7 @@ Run Featurizer_Downstream_sklearn.py to generate the test MAEs for the sklearn m
 
 ### Featurizer_Downstream_sklearn.py arguments
 
-##### -u \--unit_cell_limit will exclude unit cells larger than this size from training (default 100) 
+##### -u \--unit_cell_limit will exclude unit cells larger than this size from training (default 100)
 
 ##### -w \--number_of_worker_processes controls the maximum number of cpu threads that site-net will use (default 1)
 
@@ -143,4 +143,4 @@ Run through the notebook Downstream_MAEs_to_plots.ipynb
 
 step 8. Generate the TSNEs
 
-Run through the notebook TSNE_production.ipynb 
+Run through the notebook TSNE_production.ipynb
