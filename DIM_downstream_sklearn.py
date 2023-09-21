@@ -55,7 +55,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     config_and_model = [["Initial_eform","config/compact_dim_klnorm.yaml",None,"e_form"],
                         ["Initial_egap","config/compact_dim_klnorm.yaml",None,"e_gap"],
-                        ["nocomp_klnorm_moremultiloss_eform","config/compact_dim_nocomp_klnorm.yaml","Data/Matbench/matbench_mp_e_form_cubic_50_train_1.hdf5_best_compact_dim_nocomp_klnorm_DIM-v2.ckpt","e_form"],
+                        ["nocomp_klnorm_moremultiloss_eform","config/compact_dim_nocomp_klnorm.yaml","Data/Matbench/matbench_mp_e_form_cubic_50_train_1.hdf5_best_compact_dim_nocomp_klnorm_DIM.ckpt","e_form"],
                         ["nocomp_klnorm_moremultiloss_egap","config/compact_dim_nocomp_klnorm.yaml","Data/Matbench/matbench_mp_gap_cubic_50_train_1.hdf5_best_compact_dim_nocomp_klnorm_DIM.ckpt","e_gap"],
                         ]
 
@@ -147,7 +147,7 @@ if __name__ == "__main__":
                     rf = RandomForestRegressor().fit(results[sample,:], results_y[sample])
                     nn = MLPRegressor(hidden_layer_sizes=[64], max_iter=5000).fit(results[sample,:], results_y[sample])
                     lin = LinearRegression().fit(results[sample,:], results_y[sample])
-                rows = rows.append(pd.DataFrame({
+                rows = pd.concat([rows,pd.DataFrame({
                     "rf_R2": rf.score(results_Test, results_test_y),
                     "rf_MAE":np.mean(np.absolute(rf.predict(results_Test)-results_test_y)),
                     "rf_MSE":np.mean(np.array(rf.predict(results_Test)-results_test_y)**2),
@@ -158,9 +158,9 @@ if __name__ == "__main__":
                     "lin_MAE":np.mean(np.absolute(lin.predict(results_Test)-results_test_y)),
                     "lin_MSE":np.mean(np.array(lin.predict(results_Test)-results_test_y)**2),
                 },
-                index=[str(i)]))
+                index=[str(i)])])
             
             rows["model"] = cm[0]
             rows["limit"] = limit
-            results_dataframe = results_dataframe.append(rows, ignore_index=True)
+            results_dataframe = pd.concat([results_dataframe,rows],ignore_index=True)
             results_dataframe.to_csv("Downstream_DIM.csv")  
