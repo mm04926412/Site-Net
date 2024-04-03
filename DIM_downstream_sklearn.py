@@ -62,7 +62,7 @@ if __name__ == "__main__":
     #config_and_model = [["klnorm_multiloss","config/compact_dim_klnorm.yaml","Data/Matbench/matbench_mp_e_form_cubic_50_train_1.hdf5_best_compact_dim_klnorm_DIM-v2.ckpt"]]
 
     limits = [50, 100, 250, 1000]
-    repeats = [100,100,100,25]
+    repeats = [100,100,100,100]
     #repeats = [1000, 250, 100, 25, 10, 5]
 
     results_dataframe = pd.DataFrame(columns = ["rf_R2","rf_MAE","rf_MSE","nn_R2","nn_MAE","nn_MSE","lin_R2","lin_MAE","lin_MSE","model","limit","measure"])
