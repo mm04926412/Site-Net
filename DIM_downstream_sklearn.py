@@ -57,6 +57,8 @@ if __name__ == "__main__":
                         ["Initial_egap","config/compact_dim_klnorm.yaml",None,"e_gap"],
                         ["nocomp_klnorm_moremultiloss_eform","config/compact_dim_nocomp_klnorm.yaml","Data/Matbench/matbench_mp_e_form_cubic_50_train_1.hdf5_best_compact_dim_nocomp_klnorm_DIM-v2.ckpt","e_form"],
                         ["nocomp_klnorm_moremultiloss_egap","config/compact_dim_nocomp_klnorm.yaml","Data/Matbench/matbench_mp_gap_cubic_50_train_1.hdf5_best_compact_dim_nocomp_klnorm_DIM.ckpt","e_gap"],
+                        ["nocomp_klnorm_eform","config/compact_dim_nocomp_klnorm_noextrafalse.yaml","Data/Matbench/matbench_mp_e_form_cubic_50_train_1.hdf5_best_compact_dim_nocomp_klnorm_noextrafalse_DIM-v1.ckpt","e_form"],
+                        ["nocomp_klnorm_egap","config/compact_dim_nocomp_klnorm_noextrafalse.yaml","Data/Matbench/matbench_mp_gap_cubic_50_train_1.hdf5_best_compact_dim_nocomp_klnorm_noextrafalse_DIM.ckpt","e_gap"]
                         ]
 
     #config_and_model = [["klnorm_multiloss","config/compact_dim_klnorm.yaml","Data/Matbench/matbench_mp_e_form_cubic_50_train_1.hdf5_best_compact_dim_klnorm_DIM-v2.ckpt"]]
@@ -89,6 +91,7 @@ if __name__ == "__main__":
         config["h5_file"] = dataset_name
         config["dynamic_batch"] = False
         config["Batch_Size"] = 128
+        #config["Max_Samples"] = 1000
         if args.cell_size_limit != None:
             args.cell_size_limit = int(args.cell_size_limit)
         Dataset = DIM_h5_Data_Module(
@@ -102,13 +105,14 @@ if __name__ == "__main__":
 
         dataset_name = test_data_dict[cm[3]] #Get test dataset according to training target
         config["h5_file"] = dataset_name
+        #config["Max_Samples"] = 1000
         Dataset_Test = DIM_h5_Data_Module(
             config,
             max_len=args.cell_size_limit,
             ignore_errors=True,
             overwrite=False,
             cpus=args.number_of_worker_processes,
-            chunk_size=32
+            chunk_size=32,
         )
 
         #for limit,repeat in zip(limits,repeats):

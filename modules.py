@@ -492,7 +492,7 @@ class SiteNetDIMAttentionBlock(nn.Module):
     def __init__(
         self, af="relu", set_norm="batch",tdot=False,k_softmax=-1,attention_hidden_layers=[256,256],
         site_dim_per_head = 16, attention_heads = 4, attention_dim_interaction = 16,embedding_size=100, site_bottleneck = 64,
-        site_feature_size=1,interaction_feature_size=3, site_dot_space=256,site_dot_hidden_layers=[256],distance_cutoff=-1,**kwargs
+        site_feature_size=1,interaction_feature_size=3, site_dot_space=256,site_dot_hidden_layers=[256],distance_cutoff=-1, extra_false_samples = True,**kwargs
     ):
         super().__init__()
         self.distance_cutoff=distance_cutoff
@@ -504,6 +504,7 @@ class SiteNetDIMAttentionBlock(nn.Module):
         self.glob_dim = site_dim_per_head
         self.af = af_dict[af]()
         self.k_softmax = k_softmax
+        self.extra_false_samples = extra_false_samples
 
         self.site_featurization = nn.Linear(
             self.full_elem_token_size, site_dim_per_head * attention_heads
@@ -649,7 +650,11 @@ class SiteNetDIMAttentionBlock(nn.Module):
 
         #Combine losses
         #DIM_loss = (true_scores+(false_scores_1+false_scores_2+false_scores_3)/3).squeeze()
-        DIM_loss = (true_scores + (false_scores_1 + false_scores_2 + false_scores_3)/3).squeeze()
+        if self.extra_false_samples == True:
+            DIM_loss = (true_scores + (false_scores_1 + false_scores_2 + false_scores_3)/3).squeeze()
+        else:
+            DIM_loss = (true_scores + false_scores_1).squeeze()
+
         #Calculate weighted loss per crystal
         DIM_loss = segment_csr(DIM_loss,Batch_Mask["CSR"],reduce="mean")
         #calculate weighted loss per batch

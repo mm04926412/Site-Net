@@ -1,16 +1,15 @@
-Repository used for generating results for [Deep InfoMax paper title here]. Repository intended strictly for reproduction rather than general usage at the current time.
-
+Repository used for generating results for [Deep InfoMax paper title here]. The repository is provided as is for the purposes of providing the code used to generate the results in the paper and for reproduction of the results.
 ## Environments
 
 A conda environment .yaml file has been included which will allow the construction of an anaconda environment. This conda environment can be created using
 
 ##### conda env create -f sitenet_env.yaml
 
-For this file to resolve properly the channel priority on conda must be set to strict. For convinience, create_sitenet_env.sh has been provided. This .sh file will store the current value of the channel priority, set the channel priority to strict, and then revert it back to whatever the previous setting was after the environment is installed. By default the name of the virtual environment will be sitenet_env.yaml and can be activated with 
+For this file to resolve properly the channel priority on conda must be set to strict. For convinience, create_sitenet_env.sh has been provided. This .sh file will store the current value of the channel priority, set the channel priority to strict, and then revert it back to whatever the previous setting was after the environment is installed. The default name of this environment is pytorch2201 but can be changed without consequence.
 
-##### conda activate sitenet_env
+##### conda activate *Env Name*
 
-This local environment contains the same versions of all key packages used to generate the original results
+This local environment contains the same versions of all key packages used to generate the original results if built using create_sitenet_env.sh
 
 ## Scripts for reproducing paper results
 
@@ -125,7 +124,7 @@ Run predict_transfer_downstream.py to get the test MAEs for every supervised mod
 
 step 6. Run downstream sklearn models on traditional featurizers and output test MAES to file
 
-Run Featurizer_Downstream_sklearn.py to generate the test MAEs for the sklearn models trained on top of the xray diffraction pattern and flattened orbital field matrix. Line 170 contains a dictionary pointing to the location of the band gap and formation energy train and test datasets, please modify the dictionary to point the correct files.
+Run Featurizer_Downstream_sklearn.py to generate the test MAEs for the sklearn models trained on top of the xray diffraction pattern and flattened orbital field matrix. Line 170 contains a dictionary pointing to the location of the band gap and formation energy train and test datasets, please modify the dictionary to point to the correct files.
 
 ### Featurizer_Downstream_sklearn.py arguments
 
@@ -139,8 +138,8 @@ Run Featurizer_Downstream_sklearn.py to generate the test MAEs for the sklearn m
 
 step 7. Generate performance plots for downstream supervised site-nets and representation learning in sklearn
 
-Run through the notebook Downstream_MAEs_to_plots.ipynb
+Run through the notebook Downstream_MAEs_to_plots.ipynb to get the box plots from the paper
 
-step 8. Generate the TSNEs
+step 8. Generate the TSNEs from the paper
 
 Run through the notebook TSNE_production.ipynb 
