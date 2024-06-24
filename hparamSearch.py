@@ -8,10 +8,10 @@ from ray.tune.suggest import NevergradSearch
 import torch
 import pymatgen
 from matminer.featurizers.site import *
+import matminer
 #This allows the yaml config file to directly interface with matminer
 site_feauturizers_dict = matminer.featurizers.site.__dict__
 import pickle as pk
-import matminer
 import numpy as np
 import numpy
 import h5py
@@ -26,7 +26,7 @@ import pathlib
 from tqdm import tqdm
 import tqdm
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
-from lightning_module import Attention_Infomax, DIM_h5_Data_Module
+from lightning_module import SiteNet, DIM_h5_Data_Module
 from lightning_module import basic_callbacks
 
 # RayTune
@@ -95,9 +95,9 @@ def train_model(config, data=None, checkpoint_dir=None):
 
     if checkpoint_dir:
         ckpt = os.path.join(checkpoint_dir, "checkpoint")
-        model = Attention_Infomax.load_from_checkpoint(ckpt)
+        model = SiteNet.load_from_checkpoint(ckpt)
     else:
-        model = Attention_Infomax(config)
+        model = SiteNet(config)
     print(config)
     trainer.fit(model, data)
 
